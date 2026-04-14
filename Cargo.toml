@@ -3,6 +3,10 @@ name = "blas_rs"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "blas_rs"
+path = "src/lib.rs"
+
 [dependencies]
 wide = "1.3.0"
 rayon = "1.11.0"

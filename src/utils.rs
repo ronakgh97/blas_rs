@@ -10,6 +10,7 @@ pub fn gen_fill(buf: &mut [f32]) {
     });
 }
 
+/// Sums all elements in a f32x8 vector and returns the result as a single f32 value
 #[inline(always)]
 pub fn from_f32x8(v: f32x8) -> f32 {
     let a = v.to_array();
