@@ -8,12 +8,26 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
         return;
     }
 
+    if incx == 0 || incy == 0 {
+        panic!("Increment values must be non-zero");
+    }
+
+    if x.len() < 1 + (n - 1) * incx.unsigned_abs() as usize {
+        panic!("Length of x does not match expected size based on n and incx");
+    }
+
+    if y.len() < 1 + (n - 1) * incy.unsigned_abs() as usize {
+        panic!("Length of y does not match expected size based on n and incy");
+    }
+
     unsafe {
         let x_ptr = x.as_ptr();
         let y_ptr = y.as_mut_ptr();
 
         if incx == 1 && incy == 1 {
             let mut i = 0;
+
+            let alpha_x8 = f32x8::splat(alpha);
 
             // Process 16 elements at a time
             while i + 16 <= n {
@@ -22,8 +36,8 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
                 let x1 = f32x8::from(read_unaligned(x_ptr.add(i + 8) as *const [f32; 8]));
                 let y1 = f32x8::from(read_unaligned(y_ptr.add(i + 8) as *const [f32; 8]));
 
-                let res0 = y0.add(f32x8::splat(alpha).mul(x0));
-                let res1 = y1.add(f32x8::splat(alpha).mul(x1));
+                let res0 = y0.add(alpha_x8.mul(x0));
+                let res1 = y1.add(alpha_x8.mul(x1));
 
                 write_unaligned(y_ptr.add(i) as *mut [f32; 8], res0.to_array());
                 write_unaligned(y_ptr.add(i + 8) as *mut [f32; 8], res1.to_array());
@@ -35,7 +49,7 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
             while i + 8 <= n {
                 let x_chunk = f32x8::from(read_unaligned(x_ptr.add(i) as *const [f32; 8]));
                 let y_chunk = f32x8::from(read_unaligned(y_ptr.add(i) as *const [f32; 8]));
-                let res = y_chunk.add(f32x8::splat(alpha).mul(x_chunk));
+                let res = y_chunk.add(alpha_x8.mul(x_chunk));
                 write_unaligned(y_ptr.add(i) as *mut [f32; 8], res.to_array());
                 i += 8;
             }
@@ -46,13 +60,15 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
                 i += 1;
             }
         } else {
+            let incx = incx as isize;
+            let incy = incy as isize;
             let mut ix = if incx < 0 {
-                (n as isize - 1) * -(incx as isize)
+                (n as isize - 1) * incx.abs()
             } else {
                 0
             };
             let mut iy = if incy < 0 {
-                (n as isize - 1) * -(incy as isize)
+                (n as isize - 1) * incy.abs()
             } else {
                 0
             };
@@ -60,8 +76,8 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
             for _ in 0..n {
                 // Y += alpha * X
                 *y_ptr.offset(iy) += alpha * *x_ptr.offset(ix);
-                ix += incx as isize;
-                iy += incy as isize;
+                ix += incx;
+                iy += incy;
             }
         }
     }
@@ -71,6 +87,14 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
 pub fn scal(n: usize, alpha: f32, x: &mut [f32], incx: i32) {
     if n == 0 || alpha == 1.0 {
         return;
+    }
+
+    if incx == 0 {
+        panic!("Increment values must be non-zero");
+    }
+
+    if x.len() < 1 + (n - 1) * incx.unsigned_abs() as usize {
+        panic!("Length of x does not match expected size based on n and incx");
     }
 
     unsafe {
@@ -136,6 +160,18 @@ pub fn copy(n: usize, x: &[f32], incx: i32, y: &mut [f32], incy: i32) {
         return;
     }
 
+    if incx == 0 || incy == 0 {
+        panic!("Increment values must be non-zero");
+    }
+
+    if x.len() < 1 + (n - 1) * incx.unsigned_abs() as usize {
+        panic!("Length of x does not match expected size based on n and incx");
+    }
+
+    if y.len() < 1 + (n - 1) * incy.unsigned_abs() as usize {
+        panic!("Length of y does not match expected size based on n and incy");
+    }
+
     unsafe {
         let x_ptr = x.as_ptr();
         let y_ptr = y.as_mut_ptr();
@@ -192,6 +228,18 @@ pub fn copy(n: usize, x: &[f32], incx: i32, y: &mut [f32], incy: i32) {
 pub fn swap(n: usize, x: &mut [f32], incx: i32, y: &mut [f32], incy: i32) {
     if n == 0 {
         return;
+    }
+
+    if incx == 0 || incy == 0 {
+        panic!("Increment values must be non-zero");
+    }
+
+    if x.len() < 1 + (n - 1) * incx.unsigned_abs() as usize {
+        panic!("Length of x does not match expected size based on n and incx");
+    }
+
+    if y.len() < 1 + (n - 1) * incy.unsigned_abs() as usize {
+        panic!("Length of y does not match expected size based on n and incy");
     }
 
     unsafe {
@@ -273,12 +321,12 @@ fn test_axpy() {
     let x = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
     let mut y = vec![0.0; 8];
 
-    // Basic test
+    // Test with positive inc
     axpy(8, 2.0, &x, 1, &mut y, 1);
     assert_eq!(y, vec![0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0]);
     y.fill(0.0);
 
-    // Test with negative increments
+    // Test with negative inc
     axpy(8, 2.0, &x, 1, &mut y, -1);
     assert_eq!(y, vec![14.0, 12.0, 10.0, 8.0, 6.0, 4.0, 2.0, 0.0]);
     y.fill(0.0);
@@ -286,7 +334,7 @@ fn test_axpy() {
     assert_eq!(y, vec![14.0, 12.0, 10.0, 8.0, 6.0, 4.0, 2.0, 0.0]);
     y.fill(0.0);
 
-    // Test with non-unit increments
+    // Test with non-unit inc
     axpy(4, 2.0, &x, 2, &mut y, 2);
     assert_eq!(y, vec![0.0, 0.0, 4.0, 0.0, 8.0, 0.0, 12.0, 0.0]);
     y.fill(0.0);
@@ -325,37 +373,26 @@ fn test_axpy() {
 #[test]
 fn test_scal() {
     let mut x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-
     scal(8, 2.0, &mut x, 1);
     assert_eq!(x, vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0]);
 
     let mut x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-
     scal(8, 1.0, &mut x, 1);
     assert_eq!(x, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
 
     let mut x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-
     scal(5, -1.0, &mut x, -1);
     assert_eq!(x, vec![-1.0, -2.0, -3.0, -4.0, -5.0, 6.0, 7.0, 8.0]);
 
-    // let mut x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-    //
-    // scal(8, 2.0, &mut x, -2);
-    // assert_eq!(x, vec![1.0, 4.0, 3.0, 8.0, 5.0, 12.0, 7.0, 16.0]);
-
     let mut x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-
     scal(4, 3.0, &mut x, 2);
     assert_eq!(x, vec![3.0, 2.0, 9.0, 4.0, 15.0, 6.0, 21.0, 8.0]);
 
     let mut x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-
     scal(0, 2.0, &mut x, 1);
     assert_eq!(x, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
 
     let mut x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-
     scal(8, 0.0, &mut x, 1);
     assert_eq!(x, vec![0.0; 8]);
 }
@@ -363,8 +400,8 @@ fn test_scal() {
 #[test]
 fn test_copy() {
     let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-    let mut y = vec![0.0; 8];
 
+    let mut y = vec![0.0; 8];
     copy(8, &x, 1, &mut y, 1);
     assert_eq!(y, x);
 
@@ -384,9 +421,9 @@ fn test_copy() {
     copy(4, &x, 2, &mut y, -1);
     assert_eq!(y, vec![7.0, 5.0, 3.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
 
-    // let mut y = vec![0.0; 8];
-    // copy(3, &x, -1, &mut y, -1);
-    // assert_eq!(y, vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 3.0, 2.0]);
+    let mut y = vec![0.0; 8];
+    copy(3, &x, -1, &mut y, -1);
+    assert_eq!(y, vec![1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
 
     let mut y = vec![0.0; 8];
     copy(0, &x, 1, &mut y, 1);
