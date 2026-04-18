@@ -1,4 +1,4 @@
-Implementation of **BLAS FORTRAN 77 Prototype** Kernels in modern rust. `ONLY x86_64`
+Rewriting **BLAS FORTRAN 77 Prototype** Kernels in modern rust. `ONLY x86_64`
     
 > This will not cover all kernels for every single BLAS routine, but the most commonly used ones.
 

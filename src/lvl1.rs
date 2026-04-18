@@ -1,9 +1,10 @@
-use crate::utils::from_f32x8;
-#[allow(unused_imports)]
-use std::ops::{Add, Mul};
-use std::ptr::{read_unaligned, write_unaligned};
-use wide::f32x8;
-
+use crate::utils::from_m256;
+use std::arch::x86_64::{_MM_HINT_NTA, _mm_prefetch};
+#[allow(unused)]
+use std::arch::x86_64::{
+    _mm256_add_ps, _mm256_fmadd_ps, _mm256_hadd_ps, _mm256_loadu_ps, _mm256_mul_ps,
+    _mm256_permute_ps, _mm256_setzero_ps, _mm256_storeu_ps,
+};
 // x[ix], x[ix + incx], x[ix + 2*incx], ..., x[ix + (n-1)*incx]
 
 // TODO: Need to handle to overflows for f32, using scale^2 * ( (x1/scale)^2 + (x1/scale)^2 + ... )
@@ -34,43 +35,44 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
     if incx == 1 && incy == 1 {
         let mut i = 0;
 
-        let alpha_x8 = f32x8::splat(alpha);
-
-        // Process 16 elements at a time
+        // Handle 4 AVX registers at a time
         unsafe {
-            while i + 16 <= n {
-                let x0 = f32x8::from(read_unaligned(x_ptr.add(i) as *const [f32; 8]));
-                let y0 = f32x8::from(read_unaligned(y_ptr.add(i) as *const [f32; 8]));
-                let x1 = f32x8::from(read_unaligned(x_ptr.add(i + 8) as *const [f32; 8]));
-                let y1 = f32x8::from(read_unaligned(y_ptr.add(i + 8) as *const [f32; 8]));
+            let alpha_x8 = core::arch::x86_64::_mm256_set1_ps(alpha);
+            while i + 32 <= n {
+                let x0 = _mm256_loadu_ps(x_ptr.add(i));
+                let x1 = _mm256_loadu_ps(x_ptr.add(i + 8));
+                let x2 = _mm256_loadu_ps(x_ptr.add(i + 16));
+                let x3 = _mm256_loadu_ps(x_ptr.add(i + 24));
 
-                // FMA
-                let res0 = alpha_x8.mul_add(x0, y0);
-                let res1 = alpha_x8.mul_add(x1, y1);
+                let y0 = _mm256_loadu_ps(y_ptr.add(i));
+                let y1 = _mm256_loadu_ps(y_ptr.add(i + 8));
+                let y2 = _mm256_loadu_ps(y_ptr.add(i + 16));
+                let y3 = _mm256_loadu_ps(y_ptr.add(i + 24));
 
-                write_unaligned(y_ptr.add(i) as *mut [f32; 8], res0.to_array());
-                write_unaligned(y_ptr.add(i + 8) as *mut [f32; 8], res1.to_array());
+                let r0 = _mm256_fmadd_ps(alpha_x8, x0, y0);
+                let r1 = _mm256_fmadd_ps(alpha_x8, x1, y1);
+                let r2 = _mm256_fmadd_ps(alpha_x8, x2, y2);
+                let r3 = _mm256_fmadd_ps(alpha_x8, x3, y3);
 
-                i += 16;
+                _mm256_storeu_ps(y_ptr.add(i), r0);
+                _mm256_storeu_ps(y_ptr.add(i + 8), r1);
+                _mm256_storeu_ps(y_ptr.add(i + 16), r2);
+                _mm256_storeu_ps(y_ptr.add(i + 24), r3);
 
-                if i + 32 > n {
-                    core::arch::x86_64::_mm_prefetch(
-                        x_ptr.add(i + 32) as *const i8,
-                        core::arch::x86_64::_MM_HINT_NTA,
-                    );
-                    core::arch::x86_64::_mm_prefetch(
-                        y_ptr.add(i + 32) as *const i8,
-                        core::arch::x86_64::_MM_HINT_NTA,
-                    );
+                i += 32;
+
+                if i + 32 < n {
+                    _mm_prefetch(x_ptr.add(i + 32) as *const i8, _MM_HINT_NTA);
+                    _mm_prefetch(y_ptr.add(i + 32) as *const i8, _MM_HINT_NTA);
                 }
             }
 
-            // Handle 8 elements if left after processing 16
+            // Handle one AVX register at a time.
             while i + 8 <= n {
-                let x_chunk = f32x8::from(read_unaligned(x_ptr.add(i) as *const [f32; 8]));
-                let y_chunk = f32x8::from(read_unaligned(y_ptr.add(i) as *const [f32; 8]));
-                let res = alpha_x8.mul_add(x_chunk, y_chunk);
-                write_unaligned(y_ptr.add(i) as *mut [f32; 8], res.to_array());
+                let x0 = _mm256_loadu_ps(x_ptr.add(i));
+                let y0 = _mm256_loadu_ps(y_ptr.add(i));
+                let res0 = _mm256_fmadd_ps(alpha_x8, x0, y0);
+                _mm256_storeu_ps(y_ptr.add(i), res0);
                 i += 8;
             }
 
@@ -83,8 +85,16 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
     } else {
         let incx = incx as isize;
         let incy = incy as isize;
-        let mut ix = if incx < 0 { (1 - n as isize) * incx } else { 0 };
-        let mut iy = if incy < 0 { (1 - n as isize) * incy } else { 0 };
+        let mut ix = if incx < 0 {
+            (n as isize - 1) * -incx
+        } else {
+            0
+        };
+        let mut iy = if incy < 0 {
+            (n as isize - 1) * -incy
+        } else {
+            0
+        };
 
         unsafe {
             for _ in 0..n {
@@ -92,22 +102,6 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
                 *y_ptr.offset(iy) += alpha * *x_ptr.offset(ix);
                 ix += incx;
                 iy += incy;
-
-                let pfx = ix + 16 * incx;
-                if pfx >= 0 && pfx < x.len() as isize {
-                    core::arch::x86_64::_mm_prefetch(
-                        x_ptr.offset(pfx) as *const i8,
-                        core::arch::x86_64::_MM_HINT_T0,
-                    );
-                }
-
-                let pfy = ix + 16 * incy;
-                if pfy >= 0 && pfy < y.len() as isize {
-                    core::arch::x86_64::_mm_prefetch(
-                        y_ptr.offset(pfy) as *const i8,
-                        core::arch::x86_64::_MM_HINT_T0,
-                    );
-                }
             }
         }
     }
@@ -141,48 +135,29 @@ pub fn scal(n: usize, alpha: f32, x: &mut [f32], incx: i32) {
             }
 
             let alpha_x8 = core::arch::x86_64::_mm256_set1_ps(alpha);
-            //let alpha_x8 = f32x8::splat(alpha);
             let mut i = 0;
 
             while i + 16 <= n {
-                let mut v0 = core::arch::x86_64::_mm256_loadu_ps(x_ptr.add(i));
-                let mut v1 = core::arch::x86_64::_mm256_loadu_ps(x_ptr.add(i + 8));
+                let mut v0 = _mm256_loadu_ps(x_ptr.add(i));
+                let mut v1 = _mm256_loadu_ps(x_ptr.add(i + 8));
 
-                v0 = core::arch::x86_64::_mm256_mul_ps(alpha_x8, v0);
-                v1 = core::arch::x86_64::_mm256_mul_ps(alpha_x8, v1);
+                v0 = _mm256_mul_ps(alpha_x8, v0);
+                v1 = _mm256_mul_ps(alpha_x8, v1);
 
-                core::arch::x86_64::_mm256_storeu_ps(x_ptr.add(i), v0);
-                core::arch::x86_64::_mm256_storeu_ps(x_ptr.add(i + 8), v1);
-
-                // let x0 = f32x8::from(read_unaligned(x_ptr.add(i) as *const [f32; 8]));
-                // let x1 = f32x8::from(read_unaligned(x_ptr.add(i + 8) as *const [f32; 8]))
-                //
-                // write_unaligned(x_ptr.add(i) as *mut [f32; 8], alpha_x8.mul(x0).to_array());
-                // write_unaligned(
-                //     x_ptr.add(i + 8) as *mut [f32; 8],
-                //     alpha_x8.mul(x1).to_array(),
-                // );
+                _mm256_storeu_ps(x_ptr.add(i), v0);
+                _mm256_storeu_ps(x_ptr.add(i + 8), v1);
 
                 i += 16;
 
                 if i + 64 < n {
-                    core::arch::x86_64::_mm_prefetch(
-                        x_ptr.add(i + 32) as *const i8,
-                        core::arch::x86_64::_MM_HINT_NTA,
-                    );
+                    _mm_prefetch(x_ptr.add(i + 32) as *const i8, _MM_HINT_NTA);
                 }
             }
 
             while i + 8 <= n {
-                // let x_chunk = f32x8::from(read_unaligned(x_ptr.add(i) as *const [f32; 8]));
-                // write_unaligned(
-                //     x_ptr.add(i) as *mut [f32; 8],
-                //     alpha_x8.mul(x_chunk).to_array(),
-                // );
-
-                let v = core::arch::x86_64::_mm256_loadu_ps(x_ptr.add(i));
-                let res = core::arch::x86_64::_mm256_mul_ps(alpha_x8, v);
-                core::arch::x86_64::_mm256_storeu_ps(x_ptr.add(i), res);
+                let v = _mm256_loadu_ps(x_ptr.add(i));
+                let res = _mm256_mul_ps(alpha_x8, v);
+                _mm256_storeu_ps(x_ptr.add(i), res);
                 i += 8;
             }
 
@@ -316,49 +291,49 @@ pub fn dot(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
     let y_ptr = y.as_ptr();
 
     if incx == 1 && incy == 1 {
-        let mut sum0 = f32x8::ZERO;
-        let mut sum1 = f32x8::ZERO;
-        let mut sum2 = f32x8::ZERO;
-        let mut sum3 = f32x8::ZERO;
-        let mut i = 0;
-
         unsafe {
+            let mut sum0 = _mm256_setzero_ps();
+            let mut sum1 = _mm256_setzero_ps();
+            let mut sum2 = _mm256_setzero_ps();
+            let mut sum3 = _mm256_setzero_ps();
+            let mut i = 0;
+
             while i + 32 <= n {
-                let x0 = f32x8::from(read_unaligned(x_ptr.add(i) as *const [f32; 8]));
-                let x1 = f32x8::from(read_unaligned(x_ptr.add(i + 8) as *const [f32; 8]));
-                let x2 = f32x8::from(read_unaligned(x_ptr.add(i + 16) as *const [f32; 8]));
-                let x3 = f32x8::from(read_unaligned(x_ptr.add(i + 24) as *const [f32; 8]));
+                let x0 = _mm256_loadu_ps(x_ptr.add(i));
+                let x1 = _mm256_loadu_ps(x_ptr.add(i + 8));
+                let x2 = _mm256_loadu_ps(x_ptr.add(i + 16));
+                let x3 = _mm256_loadu_ps(x_ptr.add(i + 24));
 
-                let y0 = f32x8::from(read_unaligned(y_ptr.add(i) as *const [f32; 8]));
-                let y1 = f32x8::from(read_unaligned(y_ptr.add(i + 8) as *const [f32; 8]));
-                let y2 = f32x8::from(read_unaligned(y_ptr.add(i + 16) as *const [f32; 8]));
-                let y3 = f32x8::from(read_unaligned(y_ptr.add(i + 24) as *const [f32; 8]));
+                let y0 = _mm256_loadu_ps(y_ptr.add(i));
+                let y1 = _mm256_loadu_ps(y_ptr.add(i + 8));
+                let y2 = _mm256_loadu_ps(y_ptr.add(i + 16));
+                let y3 = _mm256_loadu_ps(y_ptr.add(i + 24));
 
-                sum0 = x0.mul_add(y0, sum0);
-                sum1 = x1.mul_add(y1, sum1);
-                sum2 = x2.mul_add(y2, sum2);
-                sum3 = x3.mul_add(y3, sum3);
+                sum0 = _mm256_fmadd_ps(x0, y0, sum0);
+                sum1 = _mm256_fmadd_ps(x1, y1, sum1);
+                sum2 = _mm256_fmadd_ps(x2, y2, sum2);
+                sum3 = _mm256_fmadd_ps(x3, y3, sum3);
 
                 i += 32;
             }
 
             while i + 8 <= n {
-                let x_chunk = f32x8::from(read_unaligned(x_ptr.add(i) as *const [f32; 8]));
-                let y_chunk = f32x8::from(read_unaligned(y_ptr.add(i) as *const [f32; 8]));
-                sum0 = x_chunk.mul_add(y_chunk, sum0);
+                let x = _mm256_loadu_ps(x_ptr.add(i));
+                let y = _mm256_loadu_ps(y_ptr.add(i));
+                sum0 = _mm256_fmadd_ps(x, y, sum0);
                 i += 8;
             }
+
+            let sum = _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3));
+
+            let mut result = from_m256(sum);
+            while i < n {
+                result += x[i] * y[i];
+                i += 1;
+            }
+
+            result
         }
-
-        let sum = sum0 + sum1 + sum2;
-
-        let mut result = from_f32x8(sum);
-        while i < n {
-            result += x[i] * y[i];
-            i += 1;
-        }
-
-        result
     } else {
         let incx = incx as isize;
         let incy = incy as isize;
@@ -387,6 +362,10 @@ pub fn nrm2(n: usize, x: &[f32], incx: i32) -> f32 {
         return 0.0;
     }
 
+    if incx == 0 {
+        panic!("Increment value must be non-zero");
+    }
+
     let (start, end) = if incx >= 0 {
         (0, (n as isize - 1) * incx as isize)
     } else {
@@ -399,40 +378,35 @@ pub fn nrm2(n: usize, x: &[f32], incx: i32) -> f32 {
 
     if incx == 1 {
         let mut i = 0;
-        let mut sum = f32x8::ZERO;
+        let mut sum = unsafe { _mm256_setzero_ps() };
 
         let x_ptr = x.as_ptr();
 
         while i + 32 <= n {
             unsafe {
-                let x0 = read_unaligned(x_ptr.add(i) as *const [f32; 8]);
-                let x1 = read_unaligned(x_ptr.add(i + 8) as *const [f32; 8]);
-                let x2 = read_unaligned(x_ptr.add(i + 16) as *const [f32; 8]);
-                let x3 = read_unaligned(x_ptr.add(i + 24) as *const [f32; 8]);
+                let x0 = _mm256_loadu_ps(x_ptr.add(i));
+                let x1 = _mm256_loadu_ps(x_ptr.add(i + 8));
+                let x2 = _mm256_loadu_ps(x_ptr.add(i + 16));
+                let x3 = _mm256_loadu_ps(x_ptr.add(i + 24));
 
-                let va = f32x8::from(x0);
-                let vb = f32x8::from(x1);
-                let vc = f32x8::from(x2);
-                let vd = f32x8::from(x3);
+                sum = _mm256_fmadd_ps(x0, x0, sum);
+                sum = _mm256_fmadd_ps(x1, x1, sum);
+                sum = _mm256_fmadd_ps(x2, x2, sum);
+                sum = _mm256_fmadd_ps(x3, x3, sum);
 
-                sum = va.mul_add(va, sum);
-                sum = vb.mul_add(vb, sum);
-                sum = vc.mul_add(vc, sum);
-                sum = vd.mul_add(vd, sum);
                 i += 32;
             }
         }
 
         while i + 8 <= n {
             unsafe {
-                let x0 = read_unaligned(x_ptr.add(i) as *const [f32; 8]);
-                let va = f32x8::from(x0);
-                sum = va.mul_add(va, sum);
+                let x = _mm256_loadu_ps(x_ptr.add(i));
+                sum = _mm256_fmadd_ps(x, x, sum);
                 i += 8;
             }
         }
 
-        let mut result = from_f32x8(sum);
+        let mut result = from_m256(sum);
         while i < n {
             result += x[i] * x[i];
             i += 1;
