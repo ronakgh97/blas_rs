@@ -1,4 +1,5 @@
 use crate::utils::from_f32x8;
+#[allow(unused_imports)]
 use std::ops::{Add, Mul};
 use std::ptr::{read_unaligned, write_unaligned};
 use wide::f32x8;
@@ -133,27 +134,38 @@ pub fn scal(n: usize, alpha: f32, x: &mut [f32], incx: i32) {
             if alpha == 0.0 {
                 std::ptr::write_bytes(x_ptr, 0u8, n);
                 // for i in 0..n {
-                //     *x_ptr.add(i) = 0.0;
+                //     *x_ptr.add(i) = 0.0  ;
                 // }
+
                 return;
             }
 
-            let alpha_x8 = f32x8::splat(alpha);
+            let alpha_x8 = core::arch::x86_64::_mm256_set1_ps(alpha);
+            //let alpha_x8 = f32x8::splat(alpha);
             let mut i = 0;
 
             while i + 16 <= n {
-                let x0 = f32x8::from(read_unaligned(x_ptr.add(i) as *const [f32; 8]));
-                let x1 = f32x8::from(read_unaligned(x_ptr.add(i + 8) as *const [f32; 8]));
+                let mut v0 = core::arch::x86_64::_mm256_loadu_ps(x_ptr.add(i));
+                let mut v1 = core::arch::x86_64::_mm256_loadu_ps(x_ptr.add(i + 8));
 
-                write_unaligned(x_ptr.add(i) as *mut [f32; 8], alpha_x8.mul(x0).to_array());
-                write_unaligned(
-                    x_ptr.add(i + 8) as *mut [f32; 8],
-                    alpha_x8.mul(x1).to_array(),
-                );
+                v0 = core::arch::x86_64::_mm256_mul_ps(alpha_x8, v0);
+                v1 = core::arch::x86_64::_mm256_mul_ps(alpha_x8, v1);
+
+                core::arch::x86_64::_mm256_storeu_ps(x_ptr.add(i), v0);
+                core::arch::x86_64::_mm256_storeu_ps(x_ptr.add(i + 8), v1);
+
+                // let x0 = f32x8::from(read_unaligned(x_ptr.add(i) as *const [f32; 8]));
+                // let x1 = f32x8::from(read_unaligned(x_ptr.add(i + 8) as *const [f32; 8]))
+                //
+                // write_unaligned(x_ptr.add(i) as *mut [f32; 8], alpha_x8.mul(x0).to_array());
+                // write_unaligned(
+                //     x_ptr.add(i + 8) as *mut [f32; 8],
+                //     alpha_x8.mul(x1).to_array(),
+                // );
 
                 i += 16;
 
-                if i + 32 > n {
+                if i + 64 < n {
                     core::arch::x86_64::_mm_prefetch(
                         x_ptr.add(i + 32) as *const i8,
                         core::arch::x86_64::_MM_HINT_NTA,
@@ -162,11 +174,15 @@ pub fn scal(n: usize, alpha: f32, x: &mut [f32], incx: i32) {
             }
 
             while i + 8 <= n {
-                let x_chunk = f32x8::from(read_unaligned(x_ptr.add(i) as *const [f32; 8]));
-                write_unaligned(
-                    x_ptr.add(i) as *mut [f32; 8],
-                    alpha_x8.mul(x_chunk).to_array(),
-                );
+                // let x_chunk = f32x8::from(read_unaligned(x_ptr.add(i) as *const [f32; 8]));
+                // write_unaligned(
+                //     x_ptr.add(i) as *mut [f32; 8],
+                //     alpha_x8.mul(x_chunk).to_array(),
+                // );
+
+                let v = core::arch::x86_64::_mm256_loadu_ps(x_ptr.add(i));
+                let res = core::arch::x86_64::_mm256_mul_ps(alpha_x8, v);
+                core::arch::x86_64::_mm256_storeu_ps(x_ptr.add(i), res);
                 i += 8;
             }
 
@@ -211,28 +227,6 @@ pub fn copy(n: usize, x: &[f32], incx: i32, y: &mut [f32], incy: i32) {
         if incx == 1 && incy == 1 {
             // Contiguous memory allows for a simple bulk copy
             std::ptr::copy_nonoverlapping(x_ptr, y_ptr, n);
-
-            // let mut i = 0;
-            // while i + 16 <= n {
-            //     let x0 = read_unaligned(x_ptr.add(i) as *const [f32; 8]);
-            //     let x1 = read_unaligned(x_ptr.add(i + 8) as *const [f32; 8]);
-            //
-            //     write_unaligned(y_ptr.add(i) as *mut [f32; 8], x0);
-            //     write_unaligned(y_ptr.add(i + 8) as *mut [f32; 8], x1);
-            //
-            //     i += 16;
-            // }
-            //
-            // while i + 8 <= n {
-            //     let x_chunk = read_unaligned(x_ptr.add(i) as *const [f32; 8]);
-            //     write_unaligned(y_ptr.add(i) as *mut [f32; 8], x_chunk);
-            //     i += 8;
-            // }
-            //
-            // while i < n {
-            //     *y_ptr.add(i) = *x_ptr.add(i);
-            //     i += 1;
-            // }
         } else {
             let incx = incx as isize;
             let incy = incy as isize;
@@ -283,36 +277,6 @@ pub fn swap(n: usize, x: &mut [f32], incx: i32, y: &mut [f32], incy: i32) {
                     std::ptr::swap(x_ptr.add(i), y_ptr.add(i));
                 }
             }
-
-            //let mut i = 0;
-            // while i + 16 <= n {
-            //     let x0 = read_unaligned(x_ptr.add(i) as *const [f32; 8]);
-            //     let y0 = read_unaligned(y_ptr.add(i) as *const [f32; 8]);
-            //     let x1 = read_unaligned(x_ptr.add(i + 8) as *const [f32; 8]);
-            //     let y1 = read_unaligned(y_ptr.add(i + 8) as *const [f32; 8]);
-            //
-            //     write_unaligned(y_ptr.add(i) as *mut [f32; 8], x0);
-            //     write_unaligned(x_ptr.add(i) as *mut [f32; 8], y0);
-            //     write_unaligned(y_ptr.add(i + 8) as *mut [f32; 8], x1);
-            //     write_unaligned(x_ptr.add(i + 8) as *mut [f32; 8], y1);
-            //
-            //     i += 16;
-            // }
-            //
-            // while i + 8 <= n {
-            //     let x_chunk = read_unaligned(x_ptr.add(i) as *const [f32; 8]);
-            //     let y_chunk = read_unaligned(y_ptr.add(i) as *const [f32; 8]);
-            //     write_unaligned(y_ptr.add(i) as *mut [f32; 8], x_chunk);
-            //     write_unaligned(x_ptr.add(i) as *mut [f32; 8], y_chunk);
-            //     i += 8;
-            // }
-            //
-            // while i < n {
-            //     let tmp = *x_ptr.add(i);
-            //     *x_ptr.add(i) = *y_ptr.add(i);
-            //     *y_ptr.add(i) = tmp;
-            //     i += 1;
-            // }
         } else {
             let incx = incx as isize;
             let incy = incy as isize;
@@ -354,18 +318,28 @@ pub fn dot(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
     if incx == 1 && incy == 1 {
         let mut sum0 = f32x8::ZERO;
         let mut sum1 = f32x8::ZERO;
+        let mut sum2 = f32x8::ZERO;
+        let mut sum3 = f32x8::ZERO;
         let mut i = 0;
 
         unsafe {
-            while i + 16 <= n {
+            while i + 32 <= n {
                 let x0 = f32x8::from(read_unaligned(x_ptr.add(i) as *const [f32; 8]));
-                let y0 = f32x8::from(read_unaligned(y_ptr.add(i) as *const [f32; 8]));
                 let x1 = f32x8::from(read_unaligned(x_ptr.add(i + 8) as *const [f32; 8]));
+                let x2 = f32x8::from(read_unaligned(x_ptr.add(i + 16) as *const [f32; 8]));
+                let x3 = f32x8::from(read_unaligned(x_ptr.add(i + 24) as *const [f32; 8]));
+
+                let y0 = f32x8::from(read_unaligned(y_ptr.add(i) as *const [f32; 8]));
                 let y1 = f32x8::from(read_unaligned(y_ptr.add(i + 8) as *const [f32; 8]));
+                let y2 = f32x8::from(read_unaligned(y_ptr.add(i + 16) as *const [f32; 8]));
+                let y3 = f32x8::from(read_unaligned(y_ptr.add(i + 24) as *const [f32; 8]));
 
                 sum0 = x0.mul_add(y0, sum0);
                 sum1 = x1.mul_add(y1, sum1);
-                i += 16;
+                sum2 = x2.mul_add(y2, sum2);
+                sum3 = x3.mul_add(y3, sum3);
+
+                i += 32;
             }
 
             while i + 8 <= n {
@@ -376,7 +350,7 @@ pub fn dot(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
             }
         }
 
-        let sum = sum0.add(sum1);
+        let sum = sum0 + sum1 + sum2;
 
         let mut result = from_f32x8(sum);
         while i < n {
@@ -391,15 +365,19 @@ pub fn dot(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
         let mut ix = if incx < 0 { (1 - n as isize) * incx } else { 0 };
         let mut iy = if incy < 0 { (1 - n as isize) * incy } else { 0 };
 
-        let mut sum = 0.0;
-        for _ in 0..n {
+        let mut sum0 = 0.0;
+        let mut sum1 = 0.0;
+        for _ in (0..n).step_by(2) {
             unsafe {
-                sum += *x_ptr.offset(ix) * *y_ptr.offset(iy);
+                sum0 += *x_ptr.offset(ix) * *y_ptr.offset(iy);
+                ix += incx;
+                iy += incy;
+                sum1 += *x_ptr.offset(ix) * *y_ptr.offset(iy);
                 ix += incx;
                 iy += incy;
             }
         }
-        sum
+        sum0 + sum1
     }
 }
 
