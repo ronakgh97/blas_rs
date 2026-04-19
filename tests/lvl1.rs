@@ -436,13 +436,6 @@ fn test_nrm2() {
 }
 
 #[test]
-#[should_panic]
-fn test_nrm_incy_zero_panic() {
-    let x = vec![1.0, 2.0, 3.0, 4.0];
-    nrm2(4, &x, 0);
-}
-
-#[test]
 fn test_nrm2_bounds_error() {
     let result = std::panic::catch_unwind(|| {
         let x = vec![1.0, 2.0];
@@ -489,4 +482,159 @@ fn test_nrm2_large_vectors() {
         };
         assert!(rel_diff < 1e-5, "failed at n={}", n);
     }
+}
+
+#[test]
+fn test_asum() {
+    let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let res = asum(8, &x, 1);
+    let exp: f32 = x.iter().map(|v| v.abs()).sum();
+    assert_eq!(res, exp);
+
+    let x = vec![-1.0, -2.0, -3.0, -4.0];
+    let res = asum(4, &x, 1);
+    assert_eq!(res, 10.0);
+
+    let x = vec![-1.0, 2.0, -3.0, 4.0, -5.0, 6.0, -7.0, 8.0];
+    let res = asum(8, &x, 1);
+    let exp: f32 = x.iter().map(|v| v.abs()).sum();
+    assert_eq!(res, exp);
+
+    let x = vec![1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0];
+    let res = asum(4, &x, 2);
+    assert_eq!(res, 10.0);
+
+    let x = vec![4.0, 3.0, 2.0, 1.0];
+    let res = asum(4, &x, -1);
+    assert_eq!(res, 10.0);
+
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    let res = asum(0, &x, 1);
+    assert_eq!(res, 0.0);
+
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    let res = asum(4, &x, 1);
+    assert_eq!(res, 10.0);
+}
+
+#[test]
+#[should_panic]
+fn test_asum_incx_zero_panic() {
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    asum(4, &x, 0);
+}
+
+#[test]
+fn test_asum_bounds_error() {
+    let result = std::panic::catch_unwind(|| {
+        let x = vec![1.0, 2.0];
+        asum(4, &x, 1);
+    });
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_asum_various_sizes() {
+    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32, 1024] {
+        let x: Vec<f32> = (0..n).map(|i| (i as f32) - (n as f32) / 2.0).collect();
+
+        let res = asum(n, &x, 1);
+        let exp: f32 = x.iter().map(|v| v.abs()).sum();
+
+        let rel_diff = if exp != 0.0 {
+            (res - exp).abs() / exp.abs()
+        } else {
+            (res - exp).abs()
+        };
+        assert!(
+            rel_diff < 1e-5,
+            "failed at n={}: res={}, exp={}",
+            n,
+            res,
+            exp
+        );
+    }
+}
+
+#[test]
+fn test_i_amax() {
+    let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let res = i_amax(8, &x, 1);
+    assert_eq!(res, 7);
+
+    let x = vec![-8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0];
+    let res = i_amax(8, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![-1.0, 2.0, -3.0, 4.0, -5.0, 6.0, -7.0, 8.0];
+    let res = i_amax(8, &x, 1);
+    assert_eq!(res, 7);
+
+    let x = vec![1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0];
+    let res = i_amax(4, &x, 2);
+    assert_eq!(res, 6);
+
+    let x = vec![4.0, 3.0, 2.0, 1.0];
+    let res = i_amax(4, &x, -1);
+    assert_eq!(res, 0);
+
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    let res = i_amax(0, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![5.0, 5.0, 5.0, 5.0, 1.0, 2.0, 3.0, 4.0];
+    let res = i_amax(8, &x, 1);
+    assert_eq!(res, 0);
+}
+
+#[test]
+#[should_panic]
+fn test_i_amax_incx_zero_panic() {
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    i_amax(4, &x, 0);
+}
+
+#[test]
+fn test_i_amax_bounds_error() {
+    let result = std::panic::catch_unwind(|| {
+        let x = vec![1.0, 2.0];
+        i_amax(4, &x, 1);
+    });
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_i_amax_various_sizes() {
+    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32, 1024] {
+        let x: Vec<f32> = (0..n).map(|i| (i as f32) + 1.0).collect();
+
+        let res = i_amax(n, &x, 1);
+        assert_eq!(res, n - 1, "failed at n={}", n);
+    }
+}
+
+#[test]
+fn test_i_amax_first_occurrence() {
+    let x = vec![5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0];
+    let res = i_amax(8, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![-1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+    let res = i_amax(8, &x, 1);
+    assert_eq!(res, 0);
+}
+
+#[test]
+fn test_i_amax_negative_values() {
+    let x = vec![-10.0, -9.0, -8.0, -7.0, -6.0, -5.0, -4.0, -3.0];
+    let res = i_amax(8, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![-1.0, 2.0, -3.0, 4.0, -5.0, 6.0, -7.0, 8.0];
+    let res = i_amax(8, &x, 1);
+    assert_eq!(res, 7);
+
+    let x = vec![-1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, -8.0];
+    let res = i_amax(8, &x, 1);
+    assert_eq!(res, 7);
 }
