@@ -37,8 +37,8 @@ fn test_axpy() {
     let mut gen_x = vec![0.0f32; 1024];
     let mut gen_y = vec![0.0f32; 1024];
 
-    gen_fill(&mut gen_x, false);
-    gen_fill(&mut gen_y, false);
+    gen_fill(&mut gen_x);
+    gen_fill(&mut gen_y);
 
     let start = std::time::Instant::now();
     for _ in 0..1024 {
