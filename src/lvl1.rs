@@ -1,19 +1,19 @@
 use crate::utils::from_m256;
-#[allow(unused)]
+#[allow(unused_imports)]
 use std::arch::x86_64::{
-    __m256i, _CMP_GT_OQ, _MM_HINT_NTA, _mm_prefetch, _mm256_add_epi32, _mm256_add_ps,
-    _mm256_and_ps, _mm256_blendv_epi8, _mm256_blendv_ps, _mm256_castps_si256, _mm256_castsi256_ps,
-    _mm256_cmp_ps, _mm256_fmadd_ps, _mm256_hadd_ps, _mm256_load_ps, _mm256_loadu_ps, _mm256_mul_ps,
-    _mm256_permute_ps, _mm256_set_epi32, _mm256_set1_epi32, _mm256_set1_ps, _mm256_setzero_ps,
-    _mm256_setzero_si256, _mm256_shuffle_epi32, _mm256_storeu_ps, _mm256_storeu_si256,
+    __m256i, _CMP_GT_OQ, _MM_HINT_ET0, _MM_HINT_NTA, _MM_HINT_T2, _mm_prefetch, _mm256_add_epi32,
+    _mm256_add_ps, _mm256_and_ps, _mm256_blendv_epi8, _mm256_blendv_ps, _mm256_castps_si256,
+    _mm256_castsi256_ps, _mm256_cmp_ps, _mm256_fmadd_ps, _mm256_hadd_ps, _mm256_load_ps,
+    _mm256_loadu_ps, _mm256_mul_ps, _mm256_permute_ps, _mm256_set_epi32, _mm256_set1_epi32,
+    _mm256_set1_ps, _mm256_setzero_ps, _mm256_setzero_si256, _mm256_shuffle_epi32,
+    _mm256_storeu_ps, _mm256_storeu_si256,
 };
-
 // TODO: x[ix], x[ix + incx], x[ix + 2*incx], ..., x[ix + (n-1)*incx]
 // TODO: Need to handle to overflows for f32, using scale^2 * ( (x1/scale)^2 + (x1/scale)^2 + ... )
 
 //#[inline(always)]
 #[inline(never)]
-/// Performs the AXPY operation, Y = alpha * X + Y, [ref](https://www.netlib.org/lapack/explore-html/d5/d4b/group__axpy.html)
+/// Performs the AXPY operation, Y = alpha * X + Y, [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/axpy.html)
 pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32) {
     if n == 0 || alpha == 0.0 {
         return;
@@ -87,7 +87,9 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
 
             // Handle remaining elements
             while i < n {
-                *y_ptr.add(i) += alpha * *x_ptr.add(i);
+                let x_val = *x_ptr.add(i);
+                let y_val = *y_ptr.add(i);
+                *y_ptr.add(i) = alpha.mul_add(x_val, y_val);
                 i += 1;
             }
         }
@@ -108,7 +110,9 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
         unsafe {
             for _ in 0..n {
                 // Y += alpha * X
-                *y_ptr.offset(iy) += alpha * *x_ptr.offset(ix);
+                let x_val = *x_ptr.offset(ix);
+                let y_val = *y_ptr.offset(iy);
+                *y_ptr.offset(iy) = alpha.mul_add(x_val, y_val);
                 ix += incx;
                 iy += incy;
             }
@@ -118,7 +122,7 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
 
 //#[inline(always)]
 #[inline(never)]
-/// Performs the SCAL operation, X = alpha * X, [ref](https://www.netlib.org/lapack/explore-html/d2/de8/group__scal.html)
+/// Performs the SCAL operation, X = alpha * X, [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/scal.html)
 pub fn scal(n: usize, alpha: f32, x: &mut [f32], incx: i32) {
     if n == 0 || alpha == 1.0 {
         return;
@@ -190,7 +194,7 @@ pub fn scal(n: usize, alpha: f32, x: &mut [f32], incx: i32) {
 
 //#[inline(always)]
 #[inline(never)]
-/// Performs the COPY operation, Y = X, [ref](https://www.netlib.org/lapack/explore-html/d5/d2b/group__copy.html)
+/// Performs the COPY operation, Y = X, [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/copy.html)
 pub fn copy(n: usize, x: &[f32], incx: i32, y: &mut [f32], incy: i32) {
     if n == 0 {
         return;
@@ -232,7 +236,7 @@ pub fn copy(n: usize, x: &[f32], incx: i32, y: &mut [f32], incy: i32) {
 
 //#[inline(always)]
 #[inline(never)]
-/// Performs the SWAP operation, X <-> Y, [ref](https://www.netlib.org/lapack/explore-html/d7/d51/group__swap.html)
+/// Performs the SWAP operation, X <-> Y, [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/swap.html)
 pub fn swap(n: usize, x: &mut [f32], incx: i32, y: &mut [f32], incy: i32) {
     if n == 0 {
         return;
@@ -286,7 +290,7 @@ pub fn swap(n: usize, x: &mut [f32], incx: i32, y: &mut [f32], incy: i32) {
 
 //#[inline(always)]
 #[inline(never)]
-/// Performs the DOT operation, returns X^T * Y, [ref](https://www.netlib.org/lapack/explore-html/d1/dcc/group__dot.html)
+/// Performs the DOT operation, returns X^T * Y, [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/dot.html)
 pub fn dot(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
     if n == 0 {
         return 0.0;
@@ -332,6 +336,11 @@ pub fn dot(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
                 sum3 = _mm256_fmadd_ps(x3, y3, sum3);
 
                 i += 32;
+
+                if i + 32 < n {
+                    _mm_prefetch(x_ptr.add(i + 32) as *const i8, _MM_HINT_T2);
+                    _mm_prefetch(y_ptr.add(i + 32) as *const i8, _MM_HINT_T2);
+                }
             }
 
             while i + 8 <= n {
@@ -359,25 +368,30 @@ pub fn dot(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
 
         let mut sum0 = 0.0f32;
         let mut sum1 = 0.0f32;
-        let mut i = 0usize;
 
-        // Have two accumulators to allow for some instruction-level parallelism
-        while i + 1 < n {
+        // Have two accumulators for `dot` to allow for some instruction-level parallelism
+        for _ in 0..n / 2 {
             unsafe {
-                sum0 += *x_ptr.offset(ix) * *y_ptr.offset(iy);
+                let x_val = *x_ptr.offset(ix);
+                let y_val = *y_ptr.offset(iy);
+                sum0 = x_val.mul_add(y_val, sum0);
                 ix += incx;
                 iy += incy;
-                sum1 += *x_ptr.offset(ix) * *y_ptr.offset(iy);
+
+                let x_val = *x_ptr.offset(ix);
+                let y_val = *y_ptr.offset(iy);
+                sum1 = x_val.mul_add(y_val, sum1);
                 ix += incx;
                 iy += incy;
             }
-            i += 2;
         }
 
         // Handle the last element if n is odd
-        if i < n {
+        if n % 2 == 1 {
             unsafe {
-                sum0 += *x_ptr.offset(ix) * *y_ptr.offset(iy);
+                let x_val = *x_ptr.offset(ix);
+                let y_val = *y_ptr.offset(iy);
+                sum0 = x_val.mul_add(y_val, sum0);
             }
         }
 
@@ -387,7 +401,7 @@ pub fn dot(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
 
 //#[inline(always)]
 #[inline(never)]
-/// Performs the NRM2 operation, returns ||X||_2, [ref](https://www.netlib.org/lapack/explore-html/d1/d2a/group__nrm2.html)
+/// Performs the NRM2 operation, returns ||X||_2, [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/nrm2.html)
 pub fn nrm2(n: usize, x: &[f32], incx: i32) -> f32 {
     if n == 0 {
         return 0.0;
@@ -420,6 +434,10 @@ pub fn nrm2(n: usize, x: &[f32], incx: i32) -> f32 {
                 sum = _mm256_fmadd_ps(x3, x3, sum);
 
                 i += 32;
+
+                if i + 64 < n {
+                    _mm_prefetch(x_ptr.add(i + 64) as *const i8, _MM_HINT_T2);
+                }
             }
         }
 
@@ -445,7 +463,8 @@ pub fn nrm2(n: usize, x: &[f32], incx: i32) -> f32 {
         let x_ptr = x.as_ptr();
         for _ in 0..n {
             unsafe {
-                sum += *x_ptr.offset(ix) * *x_ptr.offset(ix);
+                let x_val = *x_ptr.offset(ix);
+                sum = x_val.mul_add(x_val, sum);
                 ix += incx;
             }
         }
@@ -455,7 +474,7 @@ pub fn nrm2(n: usize, x: &[f32], incx: i32) -> f32 {
 
 //#[inline(always)]
 #[inline(never)]
-/// Performs the ASUM operation, returns sum of absolute values of elements in X, [ref](https://www.netlib.org/lapack/explore-html/d5/d72/group__asum.html)
+/// Performs the ASUM operation, returns sum of absolute values of elements in X, [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/asum.html)
 pub fn asum(n: usize, x: &[f32], incx: i32) -> f32 {
     if n == 0 {
         return 0.0;
@@ -543,7 +562,7 @@ pub fn asum(n: usize, x: &[f32], incx: i32) -> f32 {
 
 //#[inline(always)]
 #[inline(never)]
-/// Performs the IAMAX operation, returns the index of the element with the maximum absolute value in X, [ref](https://www.netlib.org/lapack/explore-html/dd/d52/group__iamax.html)
+/// Performs the IAMAX operation, returns the index of the element with the maximum absolute value in X, [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/iamax.html)
 pub fn i_amax(n: usize, x: &[f32], incx: i32) -> usize {
     if n == 0 {
         return 0;
@@ -629,6 +648,10 @@ pub fn i_amax(n: usize, x: &[f32], incx: i32) -> usize {
                 la_idxs3 = _mm256_blendv_epi8(la_idxs3, idx3, _mm256_castps_si256(cmp3));
 
                 i += 32;
+
+                if i + 64 < n {
+                    _mm_prefetch(x_ptr.add(i + 64) as *const i8, _MM_HINT_NTA);
+                }
             }
 
             let cmp01 = _mm256_cmp_ps(la_vals1, la_vals0, _CMP_GT_OQ);
@@ -692,15 +715,178 @@ pub fn i_amax(n: usize, x: &[f32], incx: i32) -> usize {
         let mut ix = if incx < 0 { (1 - n as isize) * incx } else { 0 };
         let x_ptr = x.as_ptr();
         let mut la_idx: usize = 0;
-        let mut la_val = unsafe { (*x_ptr.offset(ix)).abs() };
-        for _ in 1..n {
-            ix += incx;
+        let mut la_val = -1.0;
+        for _ in 0..n {
             let val = unsafe { (*x_ptr.offset(ix)).abs() };
             if val > la_val {
                 la_val = val;
                 la_idx = ix as usize;
             }
+            ix += incx;
         }
         la_idx
     }
+}
+
+//#[inline(always)]
+#[inline(never)]
+/// Performs the ROT operation, applies plane rotation to points in the X-Y plane, [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/rot.html)
+pub fn rot(n: usize, x: &mut [f32], incx: i32, y: &mut [f32], incy: i32, c: f32, s: f32) {
+    if n == 0 {
+        panic!("n must be greater than 0");
+    }
+
+    if incx == 0 || incy == 0 {
+        panic!("Increment value must be non-zero");
+    }
+
+    if x.len() < 1 + (n - 1) * incx.unsigned_abs() as usize {
+        panic!("Length of x does not match expected size based on n and incx");
+    }
+
+    if y.len() < 1 + (n - 1) * incy.unsigned_abs() as usize {
+        panic!("Length of y does not match expected size based on n and incy");
+    }
+
+    let x_ptr = x.as_mut_ptr();
+    let y_ptr = y.as_mut_ptr();
+    if incx == 1 && incy == 1 {
+        unsafe {
+            let c_x8 = _mm256_set1_ps(c);
+            let s_x8 = _mm256_set1_ps(s);
+            let neg_s_x8 = _mm256_set1_ps(-s);
+
+            let mut i = 0;
+
+            while i + 32 <= n {
+                // Load from x
+                let x0 = _mm256_loadu_ps(x_ptr.add(i));
+                let x1 = _mm256_loadu_ps(x_ptr.add(i + 8));
+                let x2 = _mm256_loadu_ps(x_ptr.add(i + 16));
+                let x3 = _mm256_loadu_ps(x_ptr.add(i + 24));
+
+                // Load from y
+                let y0 = _mm256_loadu_ps(y_ptr.add(i));
+                let y1 = _mm256_loadu_ps(y_ptr.add(i + 8));
+                let y2 = _mm256_loadu_ps(y_ptr.add(i + 16));
+                let y3 = _mm256_loadu_ps(y_ptr.add(i + 24));
+
+                // Updated rotated x
+                let rx0 = _mm256_fmadd_ps(c_x8, x0, _mm256_mul_ps(s_x8, y0));
+                let rx1 = _mm256_fmadd_ps(c_x8, x1, _mm256_mul_ps(s_x8, y1));
+                let rx2 = _mm256_fmadd_ps(c_x8, x2, _mm256_mul_ps(s_x8, y2));
+                let rx3 = _mm256_fmadd_ps(c_x8, x3, _mm256_mul_ps(s_x8, y3));
+
+                // Updated rotated y
+                let ry0 = _mm256_fmadd_ps(c_x8, y0, _mm256_mul_ps(neg_s_x8, x0));
+                let ry1 = _mm256_fmadd_ps(c_x8, y1, _mm256_mul_ps(neg_s_x8, x1));
+                let ry2 = _mm256_fmadd_ps(c_x8, y2, _mm256_mul_ps(neg_s_x8, x2));
+                let ry3 = _mm256_fmadd_ps(c_x8, y3, _mm256_mul_ps(neg_s_x8, x3));
+
+                // Write back
+                _mm256_storeu_ps(x_ptr.add(i), rx0);
+                _mm256_storeu_ps(x_ptr.add(i + 8), rx1);
+                _mm256_storeu_ps(x_ptr.add(i + 16), rx2);
+                _mm256_storeu_ps(x_ptr.add(i + 24), rx3);
+                _mm256_storeu_ps(y_ptr.add(i), ry0);
+                _mm256_storeu_ps(y_ptr.add(i + 8), ry1);
+                _mm256_storeu_ps(y_ptr.add(i + 16), ry2);
+                _mm256_storeu_ps(y_ptr.add(i + 24), ry3);
+                i += 32;
+
+                if i + 64 < n {
+                    _mm_prefetch(x_ptr.add(i + 64) as *const i8, _MM_HINT_ET0);
+                    _mm_prefetch(y_ptr.add(i + 64) as *const i8, _MM_HINT_ET0);
+                }
+            }
+            while i + 8 <= n {
+                let x = _mm256_loadu_ps(x_ptr.add(i));
+                let y = _mm256_loadu_ps(y_ptr.add(i));
+
+                let rx = _mm256_fmadd_ps(c_x8, x, _mm256_mul_ps(s_x8, y));
+                let ry = _mm256_fmadd_ps(c_x8, y, _mm256_mul_ps(neg_s_x8, x));
+
+                _mm256_storeu_ps(x_ptr.add(i), rx);
+                _mm256_storeu_ps(y_ptr.add(i), ry);
+                i += 8;
+            }
+            while i < n {
+                let x_val = *x_ptr.add(i);
+                let y_val = *y_ptr.add(i);
+                *x_ptr.add(i) = c * x_val + s * y_val;
+                *y_ptr.add(i) = c * y_val - s * x_val;
+                i += 1;
+            }
+        }
+    } else {
+        let incx = incx as isize;
+        let incy = incy as isize;
+        let mut ix = if incx < 0 {
+            (n as isize - 1) * -incx
+        } else {
+            0
+        };
+        let mut iy = if incy < 0 {
+            (n as isize - 1) * -incy
+        } else {
+            0
+        };
+
+        unsafe {
+            for _ in 0..n {
+                // x' = C⋅x+S⋅y / y' = C⋅y−S⋅x
+                let x_val = *x_ptr.offset(ix);
+                let y_val = *y_ptr.offset(iy);
+                *x_ptr.offset(ix) = c * x_val + s * y_val;
+                *y_ptr.offset(iy) = c * y_val - s * x_val;
+
+                ix += incx;
+                iy += incy;
+            }
+        }
+    }
+}
+
+//#[inline(always)]
+#[inline(never)]
+/// Performs the ROTG operation, computes the parameters for Givens rotation, [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/rotg.html)
+pub fn rotg(a: &mut f32, b: &mut f32, c: &mut f32, s: &mut f32) {
+    // Handle the zero scale case early
+    if a.abs() + b.abs() == 0.0 {
+        *c = 1.0;
+        *s = 0.0;
+        *a = 0.0;
+        *b = 0.0;
+        return;
+    }
+    // rot is calculate based on mag, because we want shortest rotation
+    // For example, if we have (-999, 1), we take something like ~(-999.0005, 0),
+    // so r copy sign of a, so that cos and sin stays in second quadrant
+    // TODO: BUT I can't confirm/find how BLAS does, they ALWAYS take the sign of *a, [think later]
+    let rot = if a.abs() > b.abs() { *a } else { *b };
+    let mut r = a.hypot(*b);
+    r = r.copysign(rot);
+
+    // Calculate sin and cos theta of rot matrix
+    // This is trivial, if solve the equation taking second component of given vector as zero,
+    // we would get this relation
+    // From here we can say cos and sine is proportional to a and b,
+    *c = *a / r;
+    *s = *b / r;
+
+    // This is by the intel docs ref to prevent floating point precision issues like (1- (99999)^2) since s^2 + c^2 = 1
+    // What/How this does? its compression, if (a) |cos| is larger than (b) |sin|, so we store smaller value, here means |sin| < 1
+    // and if not we CANT return smaller this time, because caller won't be able to know, Z is c or s?,
+    // so we return 1/c, since |cos| < 1, so inverse be > 1, now caller can distinguish, |Z| > 1 -> 1/c or |Z| < 1 -> s
+    // Also we need check for c == 0, so we send s = 1(sin[pi/2]), means vector is align with y-axis, we just need +90 rot, that's it
+    let z = if a.abs() > b.abs() {
+        *s
+    } else if *c != 0.0 {
+        1.0 / *c
+    } else {
+        1.0
+    };
+
+    *a = r;
+    *b = z;
 }

@@ -638,3 +638,170 @@ fn test_i_amax_negative_values() {
     let res = i_amax(8, &x, 1);
     assert_eq!(res, 7);
 }
+
+#[test]
+fn test_rot() {
+    let mut x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let mut y = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let orig_x = x.clone();
+    let orig_y = y.clone();
+    let (c, s) = (1.0, 0.0);
+
+    rot(8, &mut x, 1, &mut y, 1, c, s);
+    assert_eq!(x, orig_x);
+    assert_eq!(y, orig_y);
+    x.fill(0.0);
+    y.fill(0.0);
+
+    x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    y = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let (c, s) = (-1.0, 0.0);
+
+    rot(8, &mut x, 1, &mut y, 1, c, s);
+    assert_eq!(x, vec![-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0]);
+    assert_eq!(y, vec![-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0]);
+    x.fill(0.0);
+    y.fill(0.0);
+
+    x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    y = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let (c, s) = (0.0, 1.0);
+
+    rot(8, &mut x, 1, &mut y, 1, c, s);
+    assert_eq!(x, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+    assert_eq!(y, vec![-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0]);
+    x.fill(0.0);
+    y.fill(0.0);
+
+    x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
+    y = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
+    rot(4, &mut x, 2, &mut y, 2, 1.0, 0.0);
+    assert_eq!(x, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+    assert_eq!(y, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+}
+
+#[test]
+#[should_panic]
+fn test_rot_n_zero_panic() {
+    let mut x = vec![1.0, 2.0];
+    let mut y = vec![1.0, 2.0];
+    rot(0, &mut x, 1, &mut y, 1, 1.0, 0.0);
+}
+
+#[test]
+#[should_panic]
+fn test_rot_incx_zero_panic() {
+    let mut x = vec![1.0, 2.0];
+    let mut y = vec![1.0, 2.0];
+    rot(2, &mut x, 0, &mut y, 1, 1.0, 0.0);
+}
+
+#[test]
+#[should_panic]
+fn test_rot_incy_zero_panic() {
+    let mut x = vec![1.0, 2.0];
+    let mut y = vec![1.0, 2.0];
+    rot(2, &mut x, 1, &mut y, 0, 1.0, 0.0);
+}
+
+#[test]
+fn test_rot_bounds_error() {
+    let result = std::panic::catch_unwind(|| {
+        let mut x = vec![1.0, 2.0];
+        let mut y = vec![1.0, 2.0, 3.0, 4.0];
+        rot(4, &mut x, 1, &mut y, 1, 1.0, 0.0);
+    });
+    assert!(result.is_err());
+
+    let result = std::panic::catch_unwind(|| {
+        let mut x = vec![1.0, 2.0, 3.0, 4.0];
+        let mut y = vec![1.0, 2.0];
+        rot(4, &mut x, 1, &mut y, 1, 1.0, 0.0);
+    });
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_rot_various_sizes() {
+    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32, 1024] {
+        let x: Vec<f32> = (0..n).map(|i| i as f32 + 1.0).collect();
+        let y: Vec<f32> = (0..n).map(|i| -(i as f32) - 1.0).collect();
+        let orig_x = x.clone();
+
+        rot(n, &mut x.clone(), 1, &mut y.clone(), 1, 1.0, 0.0);
+
+        assert_eq!(x, orig_x, "failed identity at n={}", n);
+    }
+}
+
+#[test]
+fn test_rotg() {
+    let mut a = 3.0f32;
+    let mut b = 4.0f32;
+    let mut c = 0.0f32;
+    let mut s = 0.0f32;
+    rotg(&mut a, &mut b, &mut c, &mut s);
+    assert_eq!(a, 5.0);
+    assert_eq!(c, 0.6);
+    assert_eq!(s, 0.8);
+    assert!((b - 1.6666666).abs() < 1e-5);
+
+    let mut a = 0.0f32;
+    let mut b = 4.0f32;
+    let mut c = 0.0f32;
+    let mut s = 0.0f32;
+    rotg(&mut a, &mut b, &mut c, &mut s);
+    assert_eq!(a, 4.0);
+    assert_eq!(c, 0.0);
+    assert_eq!(s, 1.0);
+    assert_eq!(b, 1.0);
+
+    let mut a = 3.0f32;
+    let mut b = 0.0f32;
+    let mut c = 0.0f32;
+    let mut s = 0.0f32;
+    rotg(&mut a, &mut b, &mut c, &mut s);
+    assert_eq!(a, 3.0);
+    assert_eq!(c, 1.0);
+    assert_eq!(s, 0.0);
+    assert_eq!(b, 0.0);
+
+    let mut a = 0.0f32;
+    let mut b = 0.0f32;
+    let mut c = 0.0f32;
+    let mut s = 0.0f32;
+    rotg(&mut a, &mut b, &mut c, &mut s);
+    assert_eq!(c, 1.0);
+    assert_eq!(s, 0.0);
+    assert_eq!(a, 0.0);
+    assert_eq!(b, 0.0);
+
+    let mut a = -3.0f32;
+    let mut b = 4.0f32;
+    let mut c = 0.0f32;
+    let mut s = 0.0f32;
+    rotg(&mut a, &mut b, &mut c, &mut s);
+    assert_eq!(a, 5.0);
+    assert_eq!(c, -0.6);
+    assert_eq!(s, 0.8);
+
+    let mut a = 4.0f32;
+    let mut b = 3.0f32;
+    let mut c = 0.0f32;
+    let mut s = 0.0f32;
+    rotg(&mut a, &mut b, &mut c, &mut s);
+    assert_eq!(a, 5.0);
+    assert_eq!(c, 0.8);
+    assert_eq!(s, 0.6);
+    assert_eq!(b, 0.6);
+
+    let mut a = 3.0f32;
+    let mut b = 4.0f32;
+    let mut c = 0.0f32;
+    let mut s = 0.0f32;
+    rotg(&mut a, &mut b, &mut c, &mut s);
+    let r = a;
+    assert!((c * c + s * s - 1.0).abs() < 1e-5, "c^2 + s^2 should be ~1");
+    assert!((c * r - 3.0).abs() < 1e-5, "c*r should be ~3");
+    assert!((s * r - 4.0).abs() < 1e-5, "s*r should be ~4");
+}
