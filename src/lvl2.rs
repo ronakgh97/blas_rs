@@ -1,7 +1,6 @@
 use crate::lvl1::{axpy, dot, scal};
 use std::slice::from_raw_parts;
 
-
 // TODO: the order of checks can be improved, if done smartly to avoid unnecessary compute
 //#[inline(always)
 #[inline(never)]
@@ -56,6 +55,8 @@ pub fn gemv(
     if alpha == 0.0 {
         return;
     }
+
+    // TODO: as always we are memory-bound, need block caching here
 
     // We have taken `!trans` because, default is column major,
     // so for simd we need contigous memory, and this is fine place to use `axpy` from lvl1

@@ -73,7 +73,7 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
 
                 // I don't know, how to rightfully use this
                 if i + 64 < n {
-                    _mm_prefetch(x_ptr.add(i + 64) as *const i8, _MM_HINT_NTA);
+                    _mm_prefetch(x_ptr.add(i + 64) as *const i8, _MM_HINT_T2);
                     _mm_prefetch(y_ptr.add(i + 64) as *const i8, _MM_HINT_NTA);
                 }
             }

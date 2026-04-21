@@ -7,5 +7,10 @@ edition = "2024"
 name = "blas_rs"
 path = "src/lib.rs"
 
+[[bin]]
+name = "bencher"
+path = "bench/bencher.rs"
+
 [dependencies]
 fastrand = "2.4.1" # utils for random generation
+# cblas = "0.5.0" # benchmarking against cblas
