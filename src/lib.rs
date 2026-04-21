@@ -1,3 +1,48 @@
+//! # `blas_rs`
+//!
+//! Experimental BLAS kernels written in Rust for **`x86_64`**.
+//!
+//! This crate currently focuses on ALL Level BLAS operations for `f32` only,
+//! with SIMD-heavy implementations (`AVX2 only, so AVX-512 won't benefit`) where applicable.
+//!
+//! ## Modules Structure
+//!
+//! - [`lvl1`]: implements vector-vector and vector-scalar routines.
+//! - [`lvl2`]: implements for matrix-vector routines.
+//! - [`lvl3`]: implements for matrix-matrix routines.
+//! - [`utils`]: internal helpers used by kernels and tests.
+//!
+//! ## Implemented Level 1 routines (In-development)
+//!
+//! - lvl1: `axpy`, `scal`, `copy`, `swap`, `dot`, `nrm2`, `asum`, `i_amax`, `rot`, `rotg`.
+//! - lvl2: `gemv`
+//!
+//! ## Usage
+//!
+//! ```rust
+//! use blas_rs::lvl1;
+//!
+//! let n = 4;
+//! let alpha = 2.0_f32;
+//! let x = vec![1.0, 2.0, 3.0, 4.0];
+//! let mut y = vec![10.0, 20.0, 30.0, 40.0];
+//!
+//! lvl1::axpy(n, alpha, &x, 1, &mut y, 1);
+//! assert_eq!(y, vec![12.0, 24.0, 36.0, 48.0]);
+//! ```
+//!
+//! ### Notes
+//!
+//! - APIs mirror BLAS-style signatures (`n`, raw increments, and slice buffers).
+//! - Most routines panic on invalid increments (`incx == 0`, `incy == 0`, `n ==0` etc.) or insufficient slice length for the requested stride.
+//! - This crate is not for a complete BLAS replacement; its purely learning focused and improve my understanding about x86, HPC etc.; behavior and performance may evolve as more kernels are added.
+//!
+//!
+//! ### Ref
+//! - [Netlib](https://www.netlib.org/blas/)
+//! - [Intel doc](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/blas-routines.html)
+//! - [intrinsics guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html)
+
 pub mod lvl1;
 pub mod lvl2;
 pub mod lvl3;

@@ -1,5 +1,6 @@
 use blas_rs::lvl1::*;
 use blas_rs::utils::gen_fill;
+use std::panic::catch_unwind;
 
 #[test]
 fn test_axpy() {
@@ -72,14 +73,14 @@ fn test_axpy_incy_zero_panic() {
 
 #[test]
 fn test_axpy_bounds_error() {
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let x = vec![1.0, 2.0];
         let mut y = vec![0.0; 4];
         axpy(4, 2.0, &x, 1, &mut y, 1);
     });
     assert!(result.is_err());
 
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let x = vec![1.0, 2.0, 3.0, 4.0];
         let mut y = vec![0.0; 2];
         axpy(4, 2.0, &x, 1, &mut y, 1);
@@ -143,7 +144,7 @@ fn test_scal_incx_zero_panic() {
 
 #[test]
 fn test_scal_bounds_error() {
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let mut x = vec![1.0, 2.0];
         scal(4, 2.0, &mut x, 1);
     });
@@ -213,14 +214,14 @@ fn test_copy_incy_zero_panic() {
 
 #[test]
 fn test_copy_bounds_error() {
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let x = vec![1.0, 2.0];
         let mut y = vec![0.0; 4];
         copy(4, &x, 1, &mut y, 1);
     });
     assert!(result.is_err());
 
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let x = vec![1.0, 2.0, 3.0, 4.0];
         let mut y = vec![0.0; 2];
         copy(4, &x, 1, &mut y, 1);
@@ -280,14 +281,14 @@ fn test_swap_incy_zero_panic() {
 
 #[test]
 fn test_swap_bounds_error() {
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let mut x = vec![1.0, 2.0];
         let mut y = vec![0.0; 4];
         swap(4, &mut x, 1, &mut y, 1);
     });
     assert!(result.is_err());
 
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let mut x = vec![1.0, 2.0, 3.0, 4.0];
         let mut y = vec![0.0; 2];
         swap(4, &mut x, 1, &mut y, 1);
@@ -362,14 +363,14 @@ fn test_dot_incy_zero_panic() {
 
 #[test]
 fn test_dot_bounds_error() {
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let x = vec![1.0, 2.0];
         let y = vec![1.0, 2.0, 3.0, 4.0];
         dot(4, &x, 1, &y, 1);
     });
     assert!(result.is_err());
 
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let x = vec![1.0, 2.0, 3.0, 4.0];
         let y = vec![1.0, 2.0];
         dot(4, &x, 1, &y, 1);
@@ -437,7 +438,7 @@ fn test_nrm2() {
 
 #[test]
 fn test_nrm2_bounds_error() {
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let x = vec![1.0, 2.0];
         nrm2(4, &x, 1);
     });
@@ -526,7 +527,7 @@ fn test_asum_incx_zero_panic() {
 
 #[test]
 fn test_asum_bounds_error() {
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let x = vec![1.0, 2.0];
         asum(4, &x, 1);
     });
@@ -596,7 +597,7 @@ fn test_i_amax_incx_zero_panic() {
 
 #[test]
 fn test_i_amax_bounds_error() {
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let x = vec![1.0, 2.0];
         i_amax(4, &x, 1);
     });
@@ -706,14 +707,14 @@ fn test_rot_incy_zero_panic() {
 
 #[test]
 fn test_rot_bounds_error() {
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let mut x = vec![1.0, 2.0];
         let mut y = vec![1.0, 2.0, 3.0, 4.0];
         rot(4, &mut x, 1, &mut y, 1, 1.0, 0.0);
     });
     assert!(result.is_err());
 
-    let result = std::panic::catch_unwind(|| {
+    let result = catch_unwind(|| {
         let mut x = vec![1.0, 2.0, 3.0, 4.0];
         let mut y = vec![1.0, 2.0];
         rot(4, &mut x, 1, &mut y, 1, 1.0, 0.0);
@@ -804,4 +805,87 @@ fn test_rotg() {
     assert!((c * c + s * s - 1.0).abs() < 1e-5, "c^2 + s^2 should be ~1");
     assert!((c * r - 3.0).abs() < 1e-5, "c*r should be ~3");
     assert!((s * r - 4.0).abs() < 1e-5, "s*r should be ~4");
+}
+
+#[test]
+fn test_i_amin() {
+    let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![-8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 7);
+
+    let x = vec![-1.0, 2.0, -3.0, 4.0, -5.0, 6.0, -7.0, 8.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![4.0, 0.0, 3.0, 0.0, 2.0, 0.0, 1.0, 0.0];
+    let res = i_amin(4, &x, 2);
+    assert_eq!(res, 6);
+
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    let res = i_amin(4, &x, -1);
+    assert_eq!(res, 0);
+
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    let res = i_amin(0, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![5.0, 5.0, 5.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 0);
+}
+
+#[test]
+#[should_panic]
+fn test_i_amin_incx_zero_panic() {
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    i_amin(4, &x, 0);
+}
+
+#[test]
+fn test_i_amin_bounds_error() {
+    let result = catch_unwind(|| {
+        let x = vec![1.0, 2.0];
+        i_amin(4, &x, 1);
+    });
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_i_amin_various_sizes() {
+    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32, 1024] {
+        let x: Vec<f32> = (0..n).map(|i| (i as f32) + 1.0).collect();
+
+        let res = i_amin(n, &x, 1);
+        assert_eq!(res, 0, "failed at n={}", n);
+    }
+}
+
+#[test]
+fn test_i_amin_first_occurrence() {
+    let x = vec![1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![2.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 1);
+}
+
+#[test]
+fn test_i_amin_negative_values() {
+    let x = vec![-10.0, -9.0, -8.0, -7.0, -6.0, -5.0, -4.0, -3.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 7);
+
+    let x = vec![-8.0, 7.0, -6.0, 5.0, -4.0, 3.0, -2.0, 1.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 7);
+
+    let x = vec![-1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, -8.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 0);
 }
