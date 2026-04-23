@@ -6,6 +6,8 @@ use std::time::Instant;
 
 //TODO: bench will use `cblas` for openBLAS ffi, to compare against, but for now I will just use Intel VTune
 
+//TODO: metrics to bench: size/gflops, size/toc, size/bdps, size/cpuc, size/effciency, arithmetic intensity, etc
+
 #[allow(unused)]
 fn bench<F: FnMut()>(mut f: F, iters: usize, warmup: usize) -> f64 {
     for _ in 0..warmup {
