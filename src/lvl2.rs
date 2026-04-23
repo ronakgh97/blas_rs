@@ -12,7 +12,7 @@ pub fn gemv(
     n: usize,   // col of mat
     alpha: f32, // scaling for product
     a: &[f32],  // matrix buf
-    lda: usize, // leading dim of a row or col major depends, we follow `column major`
+    lda: usize, // leading dim of a, row or col major depends, we follow `column major`
     x: &[f32],  // mul vector buf
     incx: i32,
     beta: f32,     // y scaling

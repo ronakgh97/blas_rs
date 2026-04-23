@@ -41,13 +41,15 @@ fn test_axpy() {
     gen_fill(&mut gen_x);
     gen_fill(&mut gen_y);
 
+    let r = 4096;
+
     let start = std::time::Instant::now();
-    for _ in 0..1024 {
+    for _ in 0..r {
         axpy(gen_x.len(), 8.0, &gen_x, 1, &mut gen_y, 1);
     }
     let elapsed = start.elapsed().as_secs_f64();
 
-    let gflops = (2.0 * gen_x.len() as f64 * 1024.0) / (elapsed * 1e9);
+    let gflops = (2.0 * gen_x.len() as f64 * r as f64) / (elapsed * 1e9);
 
     println!(
         "Elapsed time: {:.6} seconds, GFLOPS: {:.2}",
@@ -350,13 +352,15 @@ fn test_dot() {
     gen_fill(&mut gen_x);
     gen_fill(&mut gen_y);
 
+    let r = 4096;
+
     let start = std::time::Instant::now();
-    for _ in 0..1024 {
+    for _ in 0..r {
         dot(gen_x.len(), &gen_x, 1, &gen_y, 1);
     }
     let elapsed = start.elapsed().as_secs_f64();
 
-    let gflops = ((2.0 * gen_x.len() as f64 - 1.0) * 1024.0) / (elapsed * 1e9);
+    let gflops = ((2.0 * gen_x.len() as f64 - 1.0) * r as f64) / (elapsed * 1e9);
 
     println!(
         "Elapsed time: {:.6} seconds, GFLOPS: {:.2}",

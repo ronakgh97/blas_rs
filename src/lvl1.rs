@@ -1,5 +1,4 @@
 use crate::utils::from_m256;
-use std::arch::x86_64::_CMP_LT_OQ;
 #[allow(unused_imports)]
 use std::arch::x86_64::{
     __m256i, _CMP_GT_OQ, _MM_HINT_ET0, _MM_HINT_NTA, _MM_HINT_T2, _mm_prefetch, _mm256_add_epi32,
@@ -9,6 +8,7 @@ use std::arch::x86_64::{
     _mm256_set1_ps, _mm256_setzero_ps, _mm256_setzero_si256, _mm256_shuffle_epi32,
     _mm256_storeu_ps, _mm256_storeu_si256,
 };
+use std::arch::x86_64::{_CMP_LT_OQ, _MM_HINT_T1};
 // TODO: x[ix], x[ix + incx], x[ix + 2*incx], ..., x[ix + (n-1)*incx]
 // TODO: Need to handle to overflows for f32, using scale^2 * ( (x1/scale)^2 + (x1/scale)^2 + ... )
 
@@ -346,9 +346,9 @@ pub fn dot(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
 
                 i += 32;
 
-                if i + 32 < n {
-                    _mm_prefetch(x_ptr.add(i + 32) as *const i8, _MM_HINT_T2);
-                    _mm_prefetch(y_ptr.add(i + 32) as *const i8, _MM_HINT_T2);
+                if i + 48 < n {
+                    _mm_prefetch(x_ptr.add(i + 48) as *const i8, _MM_HINT_T1);
+                    _mm_prefetch(y_ptr.add(i + 48) as *const i8, _MM_HINT_T1);
                 }
             }
 
