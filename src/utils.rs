@@ -1,4 +1,5 @@
-use std::arch::x86_64::{__m256, _mm256_storeu_ps};
+#[allow(unused)]
+use std::arch::x86_64::{__cpuid_count, __m256, _mm256_storeu_ps};
 
 /// Fills an existing buffer with random values in range `[-1.0, 1.0]`
 #[inline]

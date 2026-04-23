@@ -343,6 +343,25 @@ fn test_dot() {
     let res = dot(4, &x, 1, &y, -1);
     let exp = x[0] * y[3] + x[1] * y[2] + x[2] * y[1] + x[3] * y[0];
     assert_eq!(res, exp);
+
+    let mut gen_x = vec![0.0f32; 1024];
+    let mut gen_y = vec![0.0f32; 1024];
+
+    gen_fill(&mut gen_x);
+    gen_fill(&mut gen_y);
+
+    let start = std::time::Instant::now();
+    for _ in 0..1024 {
+        dot(gen_x.len(), &gen_x, 1, &gen_y, 1);
+    }
+    let elapsed = start.elapsed().as_secs_f64();
+
+    let gflops = ((2.0 * gen_x.len() as f64 - 1.0) * 1024.0) / (elapsed * 1e9);
+
+    println!(
+        "Elapsed time: {:.6} seconds, GFLOPS: {:.2}",
+        elapsed, gflops
+    );
 }
 
 #[test]

@@ -11,6 +11,16 @@ path = "src/lib.rs"
 name = "bencher"
 path = "bench/bencher.rs"
 
+[[bin]]
+name = "asm_runner"
+path = "asm/runner.rs"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "fat"
+
 [dependencies]
+# rayon = "1.12.0" # for parallel computations
 fastrand = "2.4.1" # utils for random generation
 # cblas = "0.5.0" # benchmarking against cblas

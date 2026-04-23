@@ -23,3 +23,4 @@ TODO:
 - lvl3: all
 - handle NaN, over/underflow, return vs panic and many more edge cases :(
 - test code ref from Fortran repo
+- multithreading, GPU maybe?

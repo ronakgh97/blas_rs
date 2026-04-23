@@ -41,23 +41,34 @@ fn main() {
     // warmup
     for _ in 0..12 {
         gemv(m, n, 8.0, &a, m, &x, 1, 6.0, &mut y, 1, false);
+        black_box(());
 
         gen_fill(&mut a);
         gen_fill(&mut x);
         y.fill(1.0);
     }
+
+    gen_fill(&mut a);
+    gen_fill(&mut x);
+    gen_fill(&mut a);
+    gen_fill(&mut x);
+    gen_fill(&mut a);
+    gen_fill(&mut x);
+
     let mut iters = 0u64;
 
-    let timer = Instant::now();
+    #[allow(unused)]
+    let mut timer = Instant::now();
 
     // classic time bound bench
     loop {
         gemv(m, n, 8.0, &a, m, &x, 1, 6.0, &mut y, 1, false);
+        black_box(());
         iters += 1;
-        // fill with random data to avoid hot cache
-        gen_fill(&mut a);
-        gen_fill(&mut x);
-        y.fill(1.0); // reset y to avoid hot cache
+        // fill with random shit to avoid hot cache
+        // gen_fill(&mut a);
+        // gen_fill(&mut x);
+        // y.fill(1.0); // reset y to avoid hot cache
         if timer.elapsed().as_secs_f32() >= PI.powi(2) {
             println!(
                 "gflops: {}, ran: {}times",
@@ -66,6 +77,9 @@ fn main() {
                     / 1e9,
                 iters
             );
+            // gen_fill(&mut a);
+            // gen_fill(&mut x);
+            // y.fill(1.0);
             // timer = Instant::now();
             // iters = 0;
             break; // <- cmt this, if you wanna get horny

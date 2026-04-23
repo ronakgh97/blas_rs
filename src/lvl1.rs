@@ -12,8 +12,7 @@ use std::arch::x86_64::{
 // TODO: x[ix], x[ix + incx], x[ix + 2*incx], ..., x[ix + (n-1)*incx]
 // TODO: Need to handle to overflows for f32, using scale^2 * ( (x1/scale)^2 + (x1/scale)^2 + ... )
 
-//#[inline(always)]
-#[inline(never)]
+#[inline(always)]
 /// The axpy routines compute a scalar-vector product and add the result to a vector.
 /// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/axpy.htmll) for more details
 pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32) {
@@ -122,8 +121,7 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
     }
 }
 
-//#[inline(always)]
-#[inline(never)]
+#[inline(always)]
 /// The scal routines computes a scalar-vector product.
 /// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/scal.html) for more details
 pub fn scal(n: usize, alpha: f32, x: &mut [f32], incx: i32) {
@@ -201,8 +199,7 @@ pub fn scal(n: usize, alpha: f32, x: &mut [f32], incx: i32) {
     }
 }
 
-//#[inline(always)]
-#[inline(never)]
+#[inline(always)]
 /// The copy routines copy one vector to another.
 /// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/copy.html) for more details
 pub fn copy(n: usize, x: &[f32], incx: i32, y: &mut [f32], incy: i32) {
@@ -244,8 +241,7 @@ pub fn copy(n: usize, x: &[f32], incx: i32, y: &mut [f32], incy: i32) {
     }
 }
 
-//#[inline(always)]
-#[inline(never)]
+#[inline(always)]
 /// Given two vectors of n elements, x and y, the swap routines return vectors y and x swapped, each replacing the other.
 /// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/swap.html) for more details
 pub fn swap(n: usize, x: &mut [f32], incx: i32, y: &mut [f32], incy: i32) {
@@ -299,8 +295,7 @@ pub fn swap(n: usize, x: &mut [f32], incx: i32, y: &mut [f32], incy: i32) {
     }
 }
 
-//#[inline(always)]
-#[inline(never)]
+#[inline(always)]
 /// The dot routines perform a dot product between two vectors.
 /// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/dot.html) for more details
 pub fn dot(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
@@ -413,8 +408,7 @@ pub fn dot(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
     }
 }
 
-//#[inline(always)]
-#[inline(never)]
+#[inline(always)]
 /// The nrm2 routines compute Euclidean norm of a vector.
 /// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/nrm2.html) for more details
 pub fn nrm2(n: usize, x: &[f32], incx: i32) -> f32 {
@@ -488,8 +482,7 @@ pub fn nrm2(n: usize, x: &[f32], incx: i32) -> f32 {
     }
 }
 
-//#[inline(always)]
-#[inline(never)]
+#[inline(always)]
 /// The asum routine computes the sum of the magnitudes of elements of a real vector, or the sum of magnitudes of the real and imaginary parts of elements of a complex vector.
 /// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/asum.html) for more details
 pub fn asum(n: usize, x: &[f32], incx: i32) -> f32 {
@@ -578,8 +571,7 @@ pub fn asum(n: usize, x: &[f32], incx: i32) -> f32 {
     }
 }
 
-//#[inline(always)]
-#[inline(never)]
+#[inline(always)]
 /// The iamax routines return an index i such that x\[i\] has the maximum absolute value of all elements in vector x.
 /// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/iamax.html) for more details
 pub fn i_amax(n: usize, x: &[f32], incx: i32) -> usize {
@@ -748,8 +740,7 @@ pub fn i_amax(n: usize, x: &[f32], incx: i32) -> usize {
     }
 }
 
-//#[inline(always)]
-#[inline(never)]
+#[inline(always)]
 /// The iamin routines return an index i such that x\[i\] has the minimum absolute value of all elements in vector x.
 /// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/iamin.html) for more details
 pub fn i_amin(n: usize, x: &[f32], incx: i32) -> usize {
@@ -915,8 +906,7 @@ pub fn i_amin(n: usize, x: &[f32], incx: i32) -> usize {
     }
 }
 
-//#[inline(always)]
-#[inline(never)]
+#[inline(always)]
 /// Given two vectors x and y of n elements, the rot routines compute four scalar-vector products and update the input vectors with the sum of two of these scalar-vector products.
 /// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/rot.html)
 pub fn rot(n: usize, x: &mut [f32], incx: i32, y: &mut [f32], incy: i32, c: f32, s: f32) {
@@ -1035,8 +1025,7 @@ pub fn rot(n: usize, x: &mut [f32], incx: i32, y: &mut [f32], incy: i32, c: f32,
     }
 }
 
-//#[inline(always)]
-#[inline(never)]
+#[inline(always)]
 /// Given the Cartesian coordinates (a, b) of a point, the rotg routines return the parameters c, s, r, and z associated with the Givens rotation.
 /// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/rotg.html)
 pub fn rotg(a: &mut f32, b: &mut f32, c: &mut f32, s: &mut f32) {

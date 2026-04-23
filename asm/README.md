@@ -1,2 +1,11 @@
-This dir/ contains generated asm from my BLAS kernel using `cargo asm --release -lib <level::kernel>`.
-This is for my better understanding of the internals
+This dir/ contains handwritten asm for some specific kernels,
+this will be used for better insights/optimzation and comparing with my Rust code and `openblas`
+
+> It will be written in NASM/Intel syntax, follows linux register, you can use `nasm` and `gcc` to compile and link &
+> test the API
+
+Todo:
+
+- lvl1: axpy, dot, i_amax, asum, rot
+- lvl2: gemv
+- lvl2: none
