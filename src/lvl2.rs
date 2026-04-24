@@ -56,10 +56,12 @@ pub fn gemv(
         return;
     }
 
+    // TODO: assuming max 64kb cache
     // How many columns to process before we proceed to next block
-    const COL_BLOCK: usize = 64;
+    let col_block: usize = { (n / 4).max(16_384) };
+
     // How many rows to proceed at once
-    const ROW_BLOCK: usize = 256;
+    let row_block: usize = { (m / 4).max(16_384) };
 
     // We have taken `!trans` because, default is column major,
     // so for simd we need contigous memory, and this is fine place to use `axpy` from lvl1.
@@ -78,14 +80,14 @@ pub fn gemv(
             0
         };
 
-        // Step through columns in chunks of `COL_BLOCK`
-        for col in (0..n).step_by(COL_BLOCK) {
-            let col_end = (col + COL_BLOCK).min(n); // <- handle last block which might be smaller than COL_BLOCK
-            // Step through rows in chunks of `ROW_BLOCK`,
+        // Step through columns in chunks of `col_block`
+        for col in (0..n).step_by(col_block) {
+            let col_end = (col + col_block).min(n); // <- handle last block which might be smaller than col_block
+            // Step through rows in chunks of `row_block`,
             // we will process a block of rows for each column block,
             // so that we can reuse the data in cache, and also apply simd on that block of rows
-            for row in (0..m).step_by(ROW_BLOCK) {
-                let row_end = (row + ROW_BLOCK).min(m); // <- handle last block (same reason)
+            for row in (0..m).step_by(row_block) {
+                let row_end = (row + row_block).min(m); // <- handle last block (same reason)
                 let curr_m = row_end - row; // <- current element in the row block, we compute on this many element only for this block
 
                 // Calculate exact memory bounds for y_buf and get local len of the y_buf for this block,
@@ -112,7 +114,7 @@ pub fn gemv(
                 // Experiment
                 unsafe {
                     _mm_prefetch(
-                        y.as_ptr().add((row + 2 * ROW_BLOCK).min(y.len())) as *const i8,
+                        y.as_ptr().add((row + 2 * row_block).min(y.len())) as *const i8,
                         _MM_HINT_ET0,
                     );
                 }
@@ -158,11 +160,11 @@ pub fn gemv(
         };
 
         // outer loop (Y-vector)
-        for col in (0..n).step_by(COL_BLOCK) {
-            let col_end = (col + COL_BLOCK).min(n); // <- handle last
+        for col in (0..n).step_by(col_block) {
+            let col_end = (col + col_block).min(n); // <- handle last
             // middle loop (X-vector)
-            for row in (0..m).step_by(ROW_BLOCK) {
-                let row_end = (row + ROW_BLOCK).min(m);
+            for row in (0..m).step_by(row_block) {
+                let row_end = (row + row_block).min(m);
                 let curr_m = row_end - row;
 
                 // Calculate exact memory bounds and starting addr for x_buf
@@ -177,7 +179,7 @@ pub fn gemv(
                 // Experiment
                 unsafe {
                     _mm_prefetch(
-                        x.as_ptr().add((row + 2 * ROW_BLOCK).min(x.len())) as *const i8,
+                        x.as_ptr().add((row + 2 * row_block).min(x.len())) as *const i8,
                         _MM_HINT_ET0,
                     );
                 }
@@ -208,4 +210,54 @@ pub fn gemv(
             }
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+/// The symv routines compute a scalar-matrix-vector product and add the result to a scalar-vector product, with a symmetric matrix.
+/// [ref](http://intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/symv.html)
+pub fn symv(
+    n: usize,   // col,rows of mat
+    alpha: f32, // scaling for product
+    a: &[f32],  // input matrix buf
+    lda: usize, // leading dim of a, row or col major depends, but we follow `column major`
+    x: &[f32],  // mul vector buf
+    incx: i32,
+    beta: f32,     // y scaling
+    y: &mut [f32], // resultant buf
+    incy: i32,
+    uplo: bool, // `true` for upper, `false` for lower
+) {
+    if incx == 0 || incy == 0 {
+        panic!("incx and incy must be non-zero");
+    }
+    if lda == 0 || lda < n {
+        panic!("lda must be >= m and non-zero");
+    }
+
+    if n == 0 {
+        panic!("Matrix dimensions must be greater than zero");
+    }
+
+    // `(n - 1) * lda` is start of last col, since we are col major,
+    // so we added n to get the last element of that col
+    if a.len() < (n - 1) * lda + n {
+        panic!("Matrix A is too short for the given dimensions and leading dimension");
+    }
+
+    // check inner dim
+    if (x.len() < (1 + (n - 1) * incx.unsigned_abs() as usize))
+        || (y.len() < (1 + (n - 1) * incy.unsigned_abs() as usize))
+    {
+        panic!("Vector x is too short for the given dimensions, increment and transposition");
+    }
+
+    // we use `scal` to handle the beta scaling and zeroing out y if beta is 0, as per BLAS spec
+    scal(n, beta, y, incy);
+
+    if alpha == 0.0 {
+        return;
+    }
+
+    if !uplo {}
 }

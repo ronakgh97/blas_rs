@@ -24,3 +24,9 @@ TODO:
 - handle NaN, over/underflow, return vs panic and many more edge cases :(
 - test code ref from Fortran repo
 - multithreading, GPU maybe?
+
+run bench using `cargo run --bin bencher --release`
+
+### single threaded gemv
+
+![plot](./bench/plot.png)
