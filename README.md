@@ -22,11 +22,16 @@ TODO:
 - lvl2: all
 - lvl3: all
 - handle NaN, over/underflow, return vs panic and many more edge cases :(
-- test code ref from Fortran repo
+- test code ref from [this](https://github.com/OpenMathLib/OpenBLAS/tree/develop) repo
 - multithreading, GPU maybe?
 
-run bench using `cargo run --bin bencher --release`
+run [bench](./bench/bencher.rs) using
+`cargo run --bin bencher --release` [ref](https://github.com/OpenMathLib/OpenBLAS/tree/develop/benchmark)
 
 ### single threaded gemv
 
-![plot](./bench/plot.png)
+![plot](bench/gemv.png)
+
+### single threaded gemv (transposed)
+
+![plot](bench/gemv_t.png)
