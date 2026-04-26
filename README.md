@@ -28,10 +28,20 @@ TODO:
 run [bench](./bench/bencher.rs) using
 `cargo run --bin bencher --release` [ref](https://github.com/OpenMathLib/OpenBLAS/tree/develop/benchmark)
 
-### single threaded gemv
+all are single threaded!!! run on i7 14650hx, rust 1.94.1
+
+### axpy
+
+![plot](bench/axpy.png)
+
+### dot
+
+![plot](bench/dot.png)
+
+### gemv
 
 ![plot](bench/gemv.png)
 
-### single threaded gemv (transposed)
+### gemv_t
 
 ![plot](bench/gemv_t.png)

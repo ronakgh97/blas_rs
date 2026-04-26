@@ -58,10 +58,10 @@ pub fn gemv(
 
     // TODO: assuming max 64kb cache
     // How many columns to process before we proceed to next block
-    let col_block: usize = { (n / 4).max(16_384) };
+    let col_block: usize = { (n / 4).clamp(1, 16_384) };
 
     // How many rows to proceed at once
-    let row_block: usize = { (m / 4).max(16_384) };
+    let row_block: usize = { (m / 4).clamp(1, 16_384) };
 
     // We have taken `!trans` because, default is column major,
     // so for simd we need contigous memory, and this is fine place to use `axpy` from lvl1.
@@ -80,44 +80,49 @@ pub fn gemv(
             0
         };
 
-        // Step through columns in chunks of `col_block`
-        for col in (0..n).step_by(col_block) {
-            let col_end = (col + col_block).min(n); // <- handle last block which might be smaller than col_block
-            // Step through rows in chunks of `row_block`,
-            // we will process a block of rows for each column block,
-            // so that we can reuse the data in cache, and also apply simd on that block of rows
-            for row in (0..m).step_by(row_block) {
-                let row_end = (row + row_block).min(m); // <- handle last block (same reason)
-                let curr_m = row_end - row; // <- current element in the row block, we compute on this many element only for this block
+        // Step through rows in chunks of `row_block`,
+        // we will process a block of cols for each row block,
+        // so that we can reuse the data in cache, and also apply simd on that block of rows
+        for row in (0..m).step_by(row_block) {
+            let row_end = (row + row_block).min(m); // <- handle last block (same reason)
+            let curr_m = row_end - row; // <- current element in the row block, we compute on this many element only for this block
 
-                // Calculate exact memory bounds for y_buf and get local len of the y_buf for this block,
-                // since we are processing `curr_m` rows, and each row is `incy` apart,
-                // so we need to account for that in the length calculation, and also `axpy` need this, so check it out first
-                let y_stride = incy.unsigned_abs() as usize;
-                let y_buf_len = 1 + (curr_m - 1) * y_stride;
+            // Calculate exact memory bounds for y_buf and get local len of the y_buf for this block,
+            // since we are processing `curr_m` rows, and each row is `incy` apart,
+            // so we need to account for that in the length calculation, and also `axpy` need this, so check it out first
+            let y_stride = incy.unsigned_abs() as usize;
+            let y_buf_len = 1 + (curr_m - 1) * y_stride;
 
-                // Find the starting address for this chunk
-                // since `from_raw_parts` points to first element, reads in increasing order,
-                // for -ve, because logically in `axpy` we are going backward,
-                // so for getting the slice, we need lowest addr (i.e. row + curr_m -1 is the last in this block), so we can `offset` and `from_raw_parts_mut` reads ahead
-                // in way that we cover the entire slice, and can safely send to `axpy`, rest striding, inc are handled by it
-                // e.g: axpy needs this [-4, -3, -2, -1, 0], not [0, -2, -4],
-                // for +ve, we take first logical element/lowest addr and move forward up the memory,
-                // for -ve, we take ALSO take lowest addr, (logically last) and move forward, or rather we OFFSET!!
-                // final YAP: we are pointing to addr of first logical element, WHICH IS ALSO THE LAST, MAN FUCK YOU IF YOU DON'T UNDERSTAND ...*sighh*
-                let y_addr = if incy < 0 {
-                    iy_b + (row as isize + curr_m as isize - 1) * incy as isize
-                } else {
-                    iy_b + (row as isize * incy as isize)
-                };
+            // Find the starting address for this chunk
+            // since `from_raw_parts` points to first element, reads in increasing order,
+            // for -ve, because logically in `axpy` we are going backward,
+            // so for getting the slice, we need lowest addr (i.e. row + curr_m -1 is the last in this block), so we can `offset` and `from_raw_parts_mut` reads ahead
+            // in way that we cover the entire slice, and can safely send to `axpy`, rest striding, inc are handled by it
+            // e.g: axpy needs this [-4, -3, -2, -1, 0], not [0, -2, -4],
+            // for +ve, we take first logical element/lowest addr and move forward up the memory,
+            // for -ve, we take ALSO take lowest addr, (logically last) and move forward, or rather we OFFSET!!
+            // final YAP: we are pointing to addr of first logical element, WHICH IS ALSO THE LAST, MAN FUCK YOU IF YOU DON'T UNDERSTAND ...*sighh*
+            let y_addr = if incy < 0 {
+                iy_b + (row as isize + curr_m as isize - 1) * incy as isize
+            } else {
+                iy_b + (row as isize * incy as isize)
+            };
 
-                // Experiment
-                unsafe {
-                    _mm_prefetch(
-                        y.as_ptr().add((row + 2 * row_block).min(y.len())) as *const i8,
-                        _MM_HINT_ET0,
-                    );
-                }
+            // Experiment
+            unsafe {
+                _mm_prefetch(
+                    y.as_ptr().add((row + 2 * row_block).min(y.len())) as *const i8,
+                    _MM_HINT_ET0,
+                );
+            }
+
+            // Get mut buf from y for this "fixed" row chunk, this stay in cache
+            let y_ptr = unsafe { y.as_mut_ptr().offset(y_addr) };
+            let y_buf = unsafe { from_raw_parts_mut(y_ptr, y_buf_len) };
+
+            // Step through columns in chunks of `col_block`
+            for col in (0..n).step_by(col_block) {
+                let col_end = (col + col_block).min(n); // <- handle last block which might be smaller than col_block
 
                 unsafe {
                     // iter over all element in col 'tile'
@@ -130,10 +135,6 @@ pub fn gemv(
                         // Get a scalar buf from x for this column (idx'th)
                         let ix = ix_b + (idx as isize * incx as isize);
                         let x_val = *x.as_ptr().offset(ix);
-
-                        // Get mut buf from y for this "fixed" row chunk, this stay in cache
-                        let y_ptr = y.as_mut_ptr().offset(y_addr);
-                        let y_buf = from_raw_parts_mut(y_ptr, y_buf_len);
 
                         // Compute this chunk
                         // Partial result for this column,
@@ -159,41 +160,42 @@ pub fn gemv(
             0
         };
 
-        // outer loop (Y-vector)
-        for col in (0..n).step_by(col_block) {
-            let col_end = (col + col_block).min(n); // <- handle last
-            // middle loop (X-vector)
-            for row in (0..m).step_by(row_block) {
-                let row_end = (row + row_block).min(m);
-                let curr_m = row_end - row;
+        // outer loop (X-vector)
+        for row in (0..m).step_by(row_block) {
+            let row_end = (row + row_block).min(m);
+            let curr_m = row_end - row;
 
-                // Calculate exact memory bounds and starting addr for x_buf
-                let x_stride = incx.unsigned_abs() as usize;
-                let x_buf_len = 1 + (curr_m - 1) * x_stride;
-                let x_addr = if incx < 0 {
-                    ix_b + (row as isize + curr_m as isize - 1) * incx as isize
-                } else {
-                    ix_b + (row as isize * incx as isize)
-                };
+            // Calculate exact memory bounds and starting addr for x_buf
+            let x_stride = incx.unsigned_abs() as usize;
+            let x_buf_len = 1 + (curr_m - 1) * x_stride;
+            let x_addr = if incx < 0 {
+                ix_b + (row as isize + curr_m as isize - 1) * incx as isize
+            } else {
+                ix_b + (row as isize * incx as isize)
+            };
 
-                // Experiment
-                unsafe {
-                    _mm_prefetch(
-                        x.as_ptr().add((row + 2 * row_block).min(x.len())) as *const i8,
-                        _MM_HINT_ET0,
-                    );
-                }
+            // Experiment
+            unsafe {
+                _mm_prefetch(
+                    x.as_ptr().add((row + 2 * row_block).min(x.len())) as *const i8,
+                    _MM_HINT_ET0,
+                );
+            }
 
-                // Get immut buf from x for this "fixed" row chunk
-                // this stay in cache, same logic as above but for y this time
-                let x_ptr = unsafe { x.as_ptr().offset(x_addr) }; // <- used offset here
-                let x_buf = unsafe { from_raw_parts(x_ptr, x_buf_len) };
+            // Get immut buf from x for this "fixed" row chunk
+            // this stay in cache, same logic as above but for y this time
+            let x_ptr = unsafe { x.as_ptr().offset(x_addr) }; // <- used offset here
+            let x_buf = unsafe { from_raw_parts(x_ptr, x_buf_len) };
+
+            // inner loop (Y-vector)
+            for col in (0..n).step_by(col_block) {
+                let col_end = (col + col_block).min(n); // <- handle last
 
                 unsafe {
                     let yb_ptr = y.as_mut_ptr();
                     // iter over cols in the block
                     for i in col..col_end {
-                        // Get base pointer for the current row, we will move it across the row for each iteration,
+                        // Get base pointer for the current col, we will move it across the col for each iteration,
                         let col_ptr = a.as_ptr().add(i * lda + row);
                         // Get buf from on that ith, we use `from_raw_parts` since it contiguous and look `curr_m` ahead
                         let col_buf = from_raw_parts(col_ptr, curr_m);

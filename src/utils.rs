@@ -2,7 +2,7 @@
 use std::arch::x86_64::{__cpuid_count, __m256, _mm256_storeu_ps};
 
 /// Fills an existing buffer with random values in range `[-1.0, 1.0]`
-#[inline]
+#[inline(always)]
 pub fn gen_fill(buf: &mut [f32]) {
     for x in buf.iter_mut() {
         *x = fastrand::f32() * 2.0 - 1.0;

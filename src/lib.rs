@@ -1,6 +1,6 @@
 //! # `blas_rs`
 //!
-//! Experimental BLAS kernels written in Rust for **`x86_64`**.
+//! Experimental BLAS kernels written in Rust for **`x86_64 arch`**.
 //!
 //! This crate currently focuses on ALL Level BLAS operations for `f32` only,
 //! with SIMD-heavy implementations (`AVX2 only, so AVX-512 won't benefit`) where applicable.
@@ -12,7 +12,7 @@
 //! - [`lvl3`]: implements for matrix-matrix routines.
 //! - [`utils`]: internal helpers used by kernels and tests.
 //!
-//! ## Implemented Level 1 routines (In-development)
+//! ## Implemented routines [WIP](https://github.com/ronakgh97/blas_rs)
 //!
 //! - lvl1: `axpy`, `scal`, `copy`, `swap`, `dot`, `nrm2`, `asum`, `i_amax`, `rot`, `rotg`.
 //! - lvl2: `gemv`
@@ -42,7 +42,9 @@
 //! - [Netlib](https://www.netlib.org/blas/)
 //! - [Intel doc](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/blas-routines.html)
 //! - [intrinsics guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html)
-
+//!
+//! ### Benchmarks [gitHub](https://github.com/ronakgh97/blas_rs)
+//!
 pub mod lvl1;
 pub mod lvl2;
 pub mod lvl3;
