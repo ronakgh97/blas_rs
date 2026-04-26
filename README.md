@@ -28,7 +28,7 @@ TODO:
 run [bench](./bench/bencher.rs) using
 `cargo run --bin bencher --release` [ref](https://github.com/OpenMathLib/OpenBLAS/tree/develop/benchmark)
 
-all are single threaded!!! run on i7 14650hx, rust 1.94.1
+all are single threaded!!! ran on i7 14650hx, rust 1.94.1
 
 ### axpy
 
