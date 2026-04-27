@@ -1052,7 +1052,7 @@ pub fn rotg(a: &mut f32, b: &mut f32, c: &mut f32, s: &mut f32) {
     *c = *a / r;
     *s = *b / r;
 
-    // This is by the intel docs ref to prevent floating point precision issues like (1- (99999)^2) since s^2 + c^2 = 1
+    // This is by the intel docs ref to prevent floating point precision issues like (1 - (99999)^2) since s^2 + c^2 = 1
     // What/How this does? its compression, if (a) |cos| is larger than (b) |sin|, so we store smaller value, here means |sin| < 1
     // and if not we CANT return smaller this time, because caller won't be able to know, Z is c or s?,
     // so we return 1/c, since |cos| < 1, so inverse be > 1, now caller can distinguish, |Z| > 1 -> 1/c or |Z| < 1 -> s

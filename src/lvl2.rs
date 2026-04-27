@@ -326,9 +326,9 @@ fn gemv_native_test() {
     use std::hint::black_box;
 
     let warmup_count = 32;
-    let run_count = 64;
+    let run_count = 256;
 
-    let size = 32772;
+    let size = 16_384;
 
     let mut a = vec![1.0f32; size * size];
     let mut x = vec![1.0f32; size];

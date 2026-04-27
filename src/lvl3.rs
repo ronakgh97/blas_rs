@@ -74,8 +74,8 @@ fn gemm_exp_test() {
     use crate::utils::gen_fill;
     use std::hint::black_box;
 
-    let run = 4;
-    let size = 8192;
+    let run = 32;
+    let size = 4096;
 
     let mut a = vec![0.0f32; size * size];
     let mut b = vec![0.0f32; size * size];
