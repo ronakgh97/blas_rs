@@ -2,11 +2,14 @@ mod harness;
 mod utils;
 
 use crate::harness::{MetricSet, run_bench};
+use crate::utils::{axpy_ob, dot_ob, gemv_ob};
 use blas_rs::lvl1::{axpy, dot};
 use blas_rs::lvl2::gemv;
 use blas_rs::utils::*;
 use std::error::Error;
+#[allow(unused)]
 use std::f64::consts::PI;
+use std::f64::consts::TAU;
 use std::hint::black_box;
 use std::path::Path;
 
@@ -29,36 +32,76 @@ fn warmup(r: usize, s: usize) {
 
     // Warmup phase
     for i in 0..r {
-        gemv(
-            s,
-            s,
-            (i % 3) as f32,
-            &a,
-            s,
-            &x,
-            1,
-            (i % 5) as f32,
-            &mut y,
-            1,
-            false,
-        );
+        {
+            gemv(
+                s,
+                s,
+                (i % 3) as f32,
+                &a,
+                s,
+                &x,
+                1,
+                (i % 5) as f32,
+                &mut y,
+                1,
+                false,
+            );
 
-        gemv(
-            s,
-            s,
-            (i % 3) as f32,
-            &a,
-            s,
-            &x,
-            1,
-            (i % 5) as f32,
-            &mut y,
-            1,
-            true,
-        );
-        axpy(s, (i % 7) as f32, &y, 1, &mut vec![0.0f32; s], 1);
+            gemv(
+                s,
+                s,
+                (i % 3) as f32,
+                &a,
+                s,
+                &x,
+                1,
+                (i % 5) as f32,
+                &mut y,
+                1,
+                true,
+            );
+            axpy(s, (i % 7) as f32, &y, 1, &mut vec![0.0f32; s], 1);
 
-        dot(s, &y, 1, &vec![0.0f32; s], 1);
+            dot(s, &y, 1, &vec![0.0f32; s], 1);
+        }
+
+        gen_fill(&mut a);
+        gen_fill(&mut x);
+        y.fill(1.0);
+
+        {
+            gemv_ob(
+                s as i32,
+                s as i32,
+                (i % 3) as f32,
+                &a,
+                s as i32,
+                &x,
+                1,
+                (i % 5) as f32,
+                &mut y,
+                1,
+                false,
+            );
+
+            gemv_ob(
+                s as i32,
+                s as i32,
+                (i % 3) as f32,
+                &a,
+                s as i32,
+                &x,
+                1,
+                (i % 5) as f32,
+                &mut y,
+                1,
+                true,
+            );
+
+            axpy_ob(s as i32, (i % 7) as f32, &y, 1, &mut vec![0.0f32; s], 1);
+
+            dot_ob(s as i32, &y, 1, &vec![0.0f32; s], 1);
+        }
 
         gen_fill(&mut a);
         gen_fill(&mut x);
@@ -68,11 +111,12 @@ fn warmup(r: usize, s: usize) {
 
 enum BenchMetrics {
     Gflops(Vec<(f64, f64)>),
-    AvgTimePerCall(Vec<(f64, f64)>),
+    Latency(Vec<(f64, f64)>),
     CacheEfficiency(Vec<(f64, f64)>), // LLC fit proxy
     // a bit heuristic, but we can see how much performance cost we pay per flop as working set grows, higher means more cache miss
     CacheMiss(Vec<(f64, f64)>),
-    // Efficiency(Vec<(f64, f64)>), <- we need openBlas for that, grand finale
+    CompareGflops(Vec<(f64, f64)>),
+    CompareLatency(Vec<(f64, f64)>),
 }
 
 fn main() {
@@ -80,14 +124,14 @@ fn main() {
         std::env::set_var("OPENBLAS_NUM_THREADS", "1");
     }
 
-    warmup(12, 8192);
+    warmup(32, 8192);
 
     // bit yap about axpy and dot, axpy is slightly overhead, due to` _mm256_storeu_ps`, write heavy,
     // so its write-bandwidth bound, even it whole vectors fits in cache and also "cache" does not help much since those 8 lanes are not reused.
-    // while dot is just most read heavy, and accumulated in 4 sum register, less overhead, finally the `cache miss` is heuristic metrics as say done
+    // while dot is just most read heavy, and accumulated in 4 sum register, less overhead, finally the `cache miss` is heuristic metrics as said earlier
 
-    // BENCH TOTAL `target_time` * sample_len * no of bench seconds
-    let target_time = PI * PI; // big enough to run least some runs in largest samples
+    // BENCH TOTAL `target_time` = (sample_len * no of bench) seconds
+    let target_time = TAU; // big enough to run least some runs in largest samples
     let size_sample = [128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768];
 
     let plot_path = Path::new("./bench");
@@ -108,25 +152,46 @@ fn main() {
             gen_fill(&mut x_buf);
             y_buf.fill(1.0);
 
-            // Start time bound bench
+            // Start time bound bench for both
             let rc = run_bench(|| axpy(i, 3.0, &x_buf, 1, &mut y_buf, 1), target_time);
 
-            let total_flops = 2.0 * i as f64 * rc; // 2n FLOPs per axpy call
-            let working_kb = 3.0 * i as f64 * size_of::<f32>() as f64 / 1024.0; // x read + y read/write
+            y_buf.fill(1.0); // reset y_buf for fair bench
 
-            let (gflops, avg_time_per_call, cache_eff, ns_per_flop) =
-                MetricSet::derive(rc, target_time, total_flops, working_kb);
+            let rc_ob = run_bench(
+                || axpy_ob(i as i32, 3.0, &x_buf, 1, &mut y_buf, 1),
+                target_time,
+            );
+
+            let working_kb = 3.0 * i as f64 * size_of::<f32>() as f64 / 1024.0; // x read + y read/write
+            let total_flops = 2.0 * i as f64 * rc; // 2n FLOPs per axpy call
+            let total_flops_ob = 2.0 * i as f64 * rc_ob;
+
+            let (gflops, gflops_ob, latency, latency_ob, cache_eff, ns_per_flop) =
+                MetricSet::derive(
+                    rc,
+                    rc_ob,
+                    target_time,
+                    total_flops,
+                    total_flops_ob,
+                    working_kb,
+                );
+
+            // TODO: this is fine for now
+            let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
+            let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
 
             metrics_collector.collect(
                 ((i as f64).log10(), gflops),
-                (i as f64, avg_time_per_call.log10()),
+                (i as f64, latency.log10()),
                 ((i as f64).log10(), cache_eff),
                 (working_kb.log10(), ns_per_flop),
+                ((i as f64).log10(), gflops_rel),
+                ((i as f64).log10(), latency_rel),
             );
 
             println!(
-                "S: {}, R: {}, GFLOPS: {}, Cache Efficiency: {} %",
-                i, rc, gflops, cache_eff
+                "S: {}, R: {}, Gflops: {}, Gflops_rel: {}%, Latency_rel: {}%, Cache fit: {} %",
+                i, rc, gflops, gflops_rel, latency_rel, cache_eff
             );
 
             // reset, avoid hot cache possibility, we don't do TRUST ME BRO BENCH
@@ -168,22 +233,42 @@ fn main() {
                 target_time,
             );
 
-            let total_flops = 2.0 * i as f64 * rc;
-            let working_kb = 2.0 * i as f64 * size_of::<f32>() as f64 / 1024.0; // x read + y read
+            let rc_ob = run_bench(
+                || {
+                    dot_ob(i as i32, &x_buf, 1, &y_buf, 1);
+                },
+                target_time,
+            );
 
-            let (gflops, avg_time_per_call, cache_eff, ns_per_flop) =
-                MetricSet::derive(rc, target_time, total_flops, working_kb);
+            let working_kb = 2.0 * i as f64 * size_of::<f32>() as f64 / 1024.0; // x read + y read/write
+            let total_flops = 2.0 * i as f64 * rc; // 2n FLOPs per axpy call
+            let total_flops_ob = 2.0 * i as f64 * rc_ob;
+
+            let (gflops, gflops_ob, latency, latency_ob, cache_eff, ns_per_flop) =
+                MetricSet::derive(
+                    rc,
+                    rc_ob,
+                    target_time,
+                    total_flops,
+                    total_flops_ob,
+                    working_kb,
+                );
+
+            let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
+            let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
 
             metrics_collector.collect(
                 ((i as f64).log10(), gflops),
-                (i as f64, avg_time_per_call.log10()),
+                (i as f64, latency.log10()),
                 ((i as f64).log10(), cache_eff),
                 (working_kb.log10(), ns_per_flop),
+                ((i as f64).log10(), gflops_rel),
+                ((i as f64).log10(), latency_rel),
             );
 
             println!(
-                "S: {}, R: {}, GFLOPS: {}, Cache Efficiency: {} %",
-                i, rc, gflops, cache_eff
+                "S: {}, R: {}, Gflops: {}, Gflops_rel: {}%, Latency_rel: {}%, Cache fit: {} %",
+                i, rc, gflops, gflops_rel, latency_rel, cache_eff
             );
 
             // reset, avoid hot cache possibility, we don't do 'TRUST ME BRO' BENCH
@@ -236,24 +321,54 @@ fn main() {
                 target_time,
             );
 
-            let total_flops = 2.0 * i.pow(2) as f64 * rc;
+            y_buf.fill(1.0); // reset y_buf for fair bench
+
+            let rc_ob = run_bench(
+                || {
+                    gemv_ob(
+                        i as i32, // m
+                        i as i32, // n
+                        5.0, &a_buf,   // matrix
+                        i as i32, // lda
+                        &x_buf,   // vec
+                        1, 7.0, &mut y_buf, // result y
+                        1, false,
+                    );
+                },
+                target_time,
+            );
+
             // no of (matrix + vector) element * write/read ops (2)
             let working_kbyte =
                 (i.pow(2) as f64 + 3.0 * i as f64) * size_of::<f32>() as f64 / 1024.0;
+            let total_flops = 2.0 * i.pow(2) as f64 * rc;
+            let total_flops_ob = 2.0 * i.pow(2) as f64 * rc_ob;
 
-            let (gflops, avg_time_per_call, cache_eff, ns_per_flop) =
-                MetricSet::derive(rc, target_time, total_flops, working_kbyte);
+            let (gflops, gflops_ob, latency, latency_ob, cache_eff, ns_per_flop) =
+                MetricSet::derive(
+                    rc,
+                    rc_ob,
+                    target_time,
+                    total_flops,
+                    total_flops_ob,
+                    working_kbyte,
+                );
+
+            let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
+            let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
 
             metrics_collector.collect(
                 ((i as f64).log10(), gflops),
-                (i as f64, avg_time_per_call.log10()),
+                (i as f64, latency.log10()),
                 ((i as f64).log10(), cache_eff),
                 (working_kbyte.log10(), ns_per_flop),
+                ((i as f64).log10(), gflops_rel),
+                ((i as f64).log10(), latency_rel),
             );
 
             println!(
-                "S: {}, R: {}, GFLOPS: {}, Cache Efficiency: {} %",
-                i, rc, gflops, cache_eff
+                "S: {}, R: {}, Gflops: {}, Gflops_rel: {}%, Latency_rel: {}%, Cache fit: {} %",
+                i, rc, gflops, gflops_rel, latency_rel, cache_eff
             );
 
             // reset, avoid hot cache possibility
@@ -305,23 +420,54 @@ fn main() {
                 },
                 target_time,
             );
-            let total_flops = 2.0 * i.pow(2) as f64 * rc;
+
+            y_buf.fill(1.0); // reset y_buf for fair bench
+
+            let rc_ob = run_bench(
+                || {
+                    gemv_ob(
+                        i as i32, // m
+                        i as i32, // n
+                        5.0, &a_buf,   // matrix
+                        i as i32, // lda
+                        &x_buf,   // vec
+                        1, 7.0, &mut y_buf, // result y
+                        1, true,
+                    );
+                },
+                target_time,
+            );
+
             let working_kbyte =
                 (i.pow(2) as f64 + 3.0 * i as f64) * size_of::<f32>() as f64 / 1024.0;
+            let total_flops = 2.0 * i.pow(2) as f64 * rc;
+            let total_flops_ob = 2.0 * i.pow(2) as f64 * rc_ob;
 
-            let (gflops, avg_time_per_call, cache_eff, ns_per_flop) =
-                MetricSet::derive(rc, target_time, total_flops, working_kbyte);
+            let (gflops, gflops_ob, latency, latency_ob, cache_eff, ns_per_flop) =
+                MetricSet::derive(
+                    rc,
+                    rc_ob,
+                    target_time,
+                    total_flops,
+                    total_flops_ob,
+                    working_kbyte,
+                );
+
+            let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
+            let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
 
             metrics_collector.collect(
                 ((i as f64).log10(), gflops),
-                (i as f64, avg_time_per_call.log10()),
+                (i as f64, latency.log10()),
                 ((i as f64).log10(), cache_eff),
                 (working_kbyte.log10(), ns_per_flop),
+                ((i as f64).log10(), gflops_rel),
+                ((i as f64).log10(), latency_rel),
             );
 
             println!(
-                "S: {}, R: {}, GFLOPS: {}, Cache Efficiency: {} %",
-                i, rc, gflops, cache_eff
+                "S: {}, R: {}, Gflops: {}, Gflops_rel: {}%, Latency_rel: {}%, Cache fit: {} %",
+                i, rc, gflops, gflops_rel, latency_rel, cache_eff
             );
 
             // reset, avoid hot cache possibility
@@ -348,7 +494,7 @@ fn plot_bench(bench_metrics: &[BenchMetrics], output: &Path) -> Result<(), Box<d
     let root = BitMapBackend::new(&output, (1200, 900)).into_drawing_area();
     root.fill(&BLACK)?;
 
-    let chart_area = root.split_evenly((2, 2)).into_iter().enumerate();
+    let chart_area = root.split_evenly((3, 2)).into_iter().enumerate();
 
     for (idx, area) in chart_area {
         let (x_label, y_label, color, label, points): (&str, &str, RGBColor, &str, &[(f64, f64)]) =
@@ -356,7 +502,7 @@ fn plot_bench(bench_metrics: &[BenchMetrics], output: &Path) -> Result<(), Box<d
                 Some(BenchMetrics::Gflops(points)) => {
                     ("log(Size)", "GFLOPS", RED, "GFLOPS", points.as_slice())
                 }
-                Some(BenchMetrics::AvgTimePerCall(points)) => (
+                Some(BenchMetrics::Latency(points)) => (
                     "Size",
                     "log(Time per Call (ns))",
                     BLUE,
@@ -375,6 +521,20 @@ fn plot_bench(bench_metrics: &[BenchMetrics], output: &Path) -> Result<(), Box<d
                     "ns / FLOP",
                     CYAN,
                     "Perf Cost",
+                    points.as_slice(),
+                ),
+                Some(BenchMetrics::CompareGflops(points)) => (
+                    "log(Size)",
+                    "GFLOPS Ratio (%)",
+                    MAGENTA,
+                    "GFLOPS(+-Rel) w/OpenBlas",
+                    points.as_slice(),
+                ),
+                Some(BenchMetrics::CompareLatency(points)) => (
+                    "log(Size)",
+                    "Latency Ratio (%)",
+                    YELLOW,
+                    "Latency(+-Rel) w/OpenBlas",
                     points.as_slice(),
                 ),
                 None => ("X", "Y", WHITE, "N/A", &[]),

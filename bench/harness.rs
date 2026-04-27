@@ -42,15 +42,19 @@ pub struct MetricSet {
     avg_time: Vec<(f64, f64)>,
     cache_eff: Vec<(f64, f64)>,
     cache_miss: Vec<(f64, f64)>,
+    compare_gflops: Vec<(f64, f64)>,
+    compare_avg_time: Vec<(f64, f64)>,
 }
 
 impl MetricSet {
     pub fn new() -> Self {
         Self {
-            gflops: Vec::new(),
-            avg_time: Vec::new(),
-            cache_eff: Vec::new(),
-            cache_miss: Vec::new(),
+            gflops: Vec::with_capacity(12),
+            avg_time: Vec::with_capacity(12),
+            cache_eff: Vec::with_capacity(12),
+            cache_miss: Vec::with_capacity(12),
+            compare_gflops: Vec::with_capacity(12),
+            compare_avg_time: Vec::with_capacity(12),
         }
     }
 
@@ -60,27 +64,49 @@ impl MetricSet {
         avg_time: (f64, f64),
         cache_eff: (f64, f64),
         cache_miss: (f64, f64),
+        compare_gflops: (f64, f64),
+        compare_avg_time: (f64, f64),
     ) {
         self.gflops.push(gflops);
         self.avg_time.push(avg_time);
         self.cache_eff.push(cache_eff);
         self.cache_miss.push(cache_miss);
+        self.compare_gflops.push(compare_gflops);
+        self.compare_avg_time.push(compare_avg_time);
     }
 
     #[inline]
-    pub fn derive(runs: f64, toc: f64, total_flops: f64, working_kb: f64) -> (f64, f64, f64, f64) {
+    pub fn derive(
+        runs: f64,
+        runs_ob: f64,
+        toc: f64,
+        total_flops: f64,
+        total_flops_ob: f64,
+        working_kb: f64,
+    ) -> (f64, f64, f64, f64, f64, f64) {
         let gflops = total_flops / toc / 1e9;
-        let avg_time_per_call = toc / runs * 1e9;
+        let gflops_ob = total_flops_ob / toc / 1e9;
+        let latency = toc / runs * 1e9;
+        let latency_ob = toc / runs_ob * 1e9;
         let cache_eff = ((*MAX_L1L2_KB / working_kb) * 100.0).min(100.0);
         let ns_per_flop = (toc * 1e9) / total_flops;
 
-        (gflops, avg_time_per_call, cache_eff, ns_per_flop)
+        (
+            gflops,
+            gflops_ob,
+            latency,
+            latency_ob,
+            cache_eff,
+            ns_per_flop,
+        )
     }
 
     pub fn finalize(self, bench_metrics: &mut Vec<BenchMetrics>) {
         bench_metrics.push(BenchMetrics::Gflops(self.gflops));
-        bench_metrics.push(BenchMetrics::AvgTimePerCall(self.avg_time));
+        bench_metrics.push(BenchMetrics::Latency(self.avg_time));
         bench_metrics.push(BenchMetrics::CacheEfficiency(self.cache_eff));
         bench_metrics.push(BenchMetrics::CacheMiss(self.cache_miss));
+        bench_metrics.push(BenchMetrics::CompareGflops(self.compare_gflops));
+        bench_metrics.push(BenchMetrics::CompareLatency(self.compare_avg_time));
     }
 }
