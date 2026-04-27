@@ -319,17 +319,16 @@ pub fn gemv_native(
     }
 }
 
-// my over engineering gemv, did 18% better in gflops 😭🌹
+// my over engineering gemv, did 18% lesser in gflops 😭🌹
 #[test]
-#[ignore]
-fn native_test() {
+fn gemv_native_test() {
     use crate::utils::gen_fill;
     use std::hint::black_box;
 
-    let warmup_count = 1024;
-    let run_count = 2048;
+    let warmup_count = 32;
+    let run_count = 64;
 
-    let size = 16_384;
+    let size = 32772;
 
     let mut a = vec![1.0f32; size * size];
     let mut x = vec![1.0f32; size];

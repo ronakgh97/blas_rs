@@ -21,7 +21,10 @@ codegen-units = 1
 lto = "fat"
 
 [dependencies]
-# rayon = "1.12.0" # for parallel computations
+rayon = "1.12.0" # for cpu parallel computations
 fastrand = "2.4.1" # utils for random generation
-# cblas = "0.5.0" # benchmarking against cblas
 plotters = "0.3.7" # for plotting benchmarks
+blas = "0.23.0" # for BLAS bindings, used in the reference implementation and benchmarks
+# externel deps, make sure to have OpenBLAS installed on your system and properly linked, or it won't compile
+# check readme for instructions
+openblas-src = { version = "0.10.15", features = ["system"] }

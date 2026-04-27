@@ -1,0 +1,86 @@
+use crate::BenchMetrics;
+use crate::utils::MAX_L1L2_KB;
+use std::time::Instant;
+
+#[inline]
+/// Bench a function `f` by running it repeatedly until `target_time` seconds have elapsed,
+/// and returning the total number of runs completed.
+pub fn run_bench<F>(mut f: F, target_time: f64) -> f64
+where
+    F: FnMut(),
+{
+    let start = Instant::now();
+    let mut runs = 0.0;
+
+    while start.elapsed().as_secs_f64() < target_time {
+        f();
+        runs += 1.0;
+    }
+
+    runs
+}
+
+#[allow(unused)]
+/// Bench a function `f` by running it `runs` times and returning the average time per run in seconds
+fn bench<F: FnMut()>(mut f: F, runs: usize, warmup: usize) -> f64 {
+    for _ in 0..warmup {
+        f();
+    }
+
+    let start = Instant::now();
+
+    for _ in 0..runs {
+        f();
+    }
+
+    let dur = start.elapsed();
+    dur.as_secs_f64() / runs as f64
+}
+
+pub struct MetricSet {
+    gflops: Vec<(f64, f64)>,
+    avg_time: Vec<(f64, f64)>,
+    cache_eff: Vec<(f64, f64)>,
+    cache_miss: Vec<(f64, f64)>,
+}
+
+impl MetricSet {
+    pub fn new() -> Self {
+        Self {
+            gflops: Vec::new(),
+            avg_time: Vec::new(),
+            cache_eff: Vec::new(),
+            cache_miss: Vec::new(),
+        }
+    }
+
+    pub fn collect(
+        &mut self,
+        gflops: (f64, f64),
+        avg_time: (f64, f64),
+        cache_eff: (f64, f64),
+        cache_miss: (f64, f64),
+    ) {
+        self.gflops.push(gflops);
+        self.avg_time.push(avg_time);
+        self.cache_eff.push(cache_eff);
+        self.cache_miss.push(cache_miss);
+    }
+
+    #[inline]
+    pub fn derive(runs: f64, toc: f64, total_flops: f64, working_kb: f64) -> (f64, f64, f64, f64) {
+        let gflops = total_flops / toc / 1e9;
+        let avg_time_per_call = toc / runs * 1e9;
+        let cache_eff = ((*MAX_L1L2_KB / working_kb) * 100.0).min(100.0);
+        let ns_per_flop = (toc * 1e9) / total_flops;
+
+        (gflops, avg_time_per_call, cache_eff, ns_per_flop)
+    }
+
+    pub fn finalize(self, bench_metrics: &mut Vec<BenchMetrics>) {
+        bench_metrics.push(BenchMetrics::Gflops(self.gflops));
+        bench_metrics.push(BenchMetrics::AvgTimePerCall(self.avg_time));
+        bench_metrics.push(BenchMetrics::CacheEfficiency(self.cache_eff));
+        bench_metrics.push(BenchMetrics::CacheMiss(self.cache_miss));
+    }
+}

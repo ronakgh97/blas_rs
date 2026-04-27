@@ -28,6 +28,12 @@ TODO:
 run [bench](./bench/bencher.rs) using
 `cargo run --bin bencher --release` [ref](https://github.com/OpenMathLib/OpenBLAS/tree/develop/benchmark)
 
+> NOTE: need openBlas installed in system
+
+- windows: clone [this](https://github.com/microsoft/vcpkg.git), run `.\bootstrap-vcpkg.bat`, then
+  `.\vcpkg install openblas:x64-windows` and `setx VCPKG_ROOT=C:\path\to\vcpkg`
+- linux: `sudo apt install libopenblas-dev pkg-config` or `sudo pacman -S openblas pkg-config`
+
 all are single threaded!!! ran on i7 14650hx, rust 1.94.1
 
 ### axpy
