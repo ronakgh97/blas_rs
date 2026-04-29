@@ -16,7 +16,7 @@ pub fn gemv(
     x: &[f32],  // mul vector buf
     incx: i32,
     beta: f32,     // y scaling
-    y: &mut [f32], // resultant buf
+    y: &mut [f32], // resultant vec_buf
     incy: i32,
     is_trans: bool, // Fortran uses 'T', 'N', but we will use bool
 ) {
@@ -323,6 +323,7 @@ pub fn gemv_native(
 #[test]
 fn gemv_native_test() {
     use crate::utils::gen_fill;
+    use rayon::join;
     use std::hint::black_box;
 
     let warmup_count = 32;
@@ -332,57 +333,58 @@ fn gemv_native_test() {
 
     let mut a = vec![1.0f32; size * size];
     let mut x = vec![1.0f32; size];
-    let mut y = vec![0.0f32; size];
+    let mut y1 = vec![0.0f32; size];
+    let mut y2 = vec![0.0f32; size];
 
     black_box(&mut a);
     black_box(&mut x);
-    black_box(&mut y);
+    black_box(&mut y1);
+    black_box(&mut y2);
 
     gen_fill(&mut a);
     gen_fill(&mut x);
 
     for _ in 0..warmup_count {
-        gemv_native(size, size, 7.0, &a, size, &x, 1, 9.0, &mut y, 1, false);
-        gemv(size, size, 7.0, &a, size, &x, 1, 9.0, &mut y, 1, true);
+        join(
+            || {
+                gemv_native(size, size, 5.0, &a, size, &x, 1, 7.0, &mut y1, 1, false);
+            },
+            || {
+                gemv(size, size, 5.0, &a, size, &x, 1, 7.0, &mut y2, 1, false);
+            },
+        );
     }
 
-    let start = std::time::Instant::now();
-    for _ in 0..run_count {
-        gemv_native(size, size, 5.0, &a, size, &x, 1, 7.0, &mut y, 1, false);
-    }
-    let end = start.elapsed();
-
-    let total_flops = 2.0 * size.pow(2) as f64 * run_count as f64;
-    let gflops = total_flops / end.as_secs_f64() / 1e9;
-
-    println!(
-        "gemv_native: Size: {}x{}, Runs: {}, Time: {:.3} secs, GFLOPS: {:.2}",
-        size,
-        size,
-        run_count,
-        end.as_secs_f64(),
-        gflops
+    let (dur_native, dur_opt) = join(
+        || {
+            let start = std::time::Instant::now();
+            for _ in 0..run_count {
+                gemv_native(size, size, 5.0, &a, size, &x, 1, 7.0, &mut y1, 1, false);
+            }
+            start.elapsed()
+        },
+        || {
+            let start = std::time::Instant::now();
+            for _ in 0..run_count {
+                gemv(size, size, 5.0, &a, size, &x, 1, 7.0, &mut y2, 1, false);
+            }
+            start.elapsed()
+        },
     );
 
-    gen_fill(&mut a);
-    gen_fill(&mut x);
-
-    let start = std::time::Instant::now();
-    for _ in 0..run_count {
-        gemv(size, size, 5.0, &a, size, &x, 1, 7.0, &mut y, 1, false);
-    }
-    let end = start.elapsed();
-
-    let total_flops = 2.0 * size.pow(2) as f64 * run_count as f64;
-    let gflops = total_flops / end.as_secs_f64() / 1e9;
+    let total_flops = 2.0 * (size.pow(2) as f64) * (run_count as f64);
+    let gflops_native = total_flops / dur_native.as_secs_f64() / 1e9;
+    let gflops_opt = total_flops / dur_opt.as_secs_f64() / 1e9;
 
     println!(
-        "gemv: Size: {}x{}, Runs: {}, Time: {:.3} secs, GFLOPS: {:.2}",
+        "gemv_native_test: {}x{}, {} runs, native: {:.3}s ({:.2} GFLOPS), opt: {:.3}s ({:.2} GFLOPS)",
         size,
         size,
         run_count,
-        end.as_secs_f64(),
-        gflops
+        dur_native.as_secs_f64(),
+        gflops_native,
+        dur_opt.as_secs_f64(),
+        gflops_opt
     );
 }
 

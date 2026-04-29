@@ -153,20 +153,27 @@ pub fn scal(n: usize, alpha: f32, x: &mut [f32], incx: i32) {
             let alpha_x8 = _mm256_set1_ps(alpha);
             let mut i = 0;
 
-            while i + 16 <= n {
-                // Load 16 elements (2 AVX registers)
+            while i + 32 <= n {
+                // Load 4 AVX registers at a time
                 let mut v0 = _mm256_loadu_ps(x_ptr.add(i));
                 let mut v1 = _mm256_loadu_ps(x_ptr.add(i + 8));
+                let mut v2 = _mm256_loadu_ps(x_ptr.add(i + 16));
+                let mut v3 = _mm256_loadu_ps(x_ptr.add(i + 24));
 
                 // Scale the vectors by alpha
                 v0 = _mm256_mul_ps(alpha_x8, v0);
                 v1 = _mm256_mul_ps(alpha_x8, v1);
+                v2 = _mm256_mul_ps(alpha_x8, v2);
+                v3 = _mm256_mul_ps(alpha_x8, v3);
 
                 // Write back
                 _mm256_storeu_ps(x_ptr.add(i), v0);
                 _mm256_storeu_ps(x_ptr.add(i + 8), v1);
+                _mm256_storeu_ps(x_ptr.add(i + 16), v2);
+                _mm256_storeu_ps(x_ptr.add(i + 24), v3);
 
-                i += 16;
+                // We processed 4 registers of 8 lanes each -> 32 elements
+                i += 32;
 
                 // Experimental
                 if i + 64 < n {

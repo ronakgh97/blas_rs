@@ -15,6 +15,7 @@ refs I took:
   details, very clear
 - https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html ← good man for intrinsics
 - https://doc.rust-lang.org/core/arch/x86_64/index.html#functions ←/
+- https://public.dhe.ibm.com/software/dw/cell/BLAS_Prog_Guide_API_v3.1.pdf <- api ref, mostly similar everywhere
 
 TODO:
 
@@ -22,7 +23,7 @@ TODO:
 - lvl2: all
 - lvl3: all
 - handle NaN, over/underflow, return vs panic and many more edge cases :(
-- test code ref from [this](https://github.com/OpenMathLib/OpenBLAS/tree/develop) repo
+- test code ref from [this](https://github.com/OpenMathLib/OpenBLAS/tree/develop) repo, currently ai-generated
 - multithreading, GPU maybe?
 
 run [bench](./bench/bencher.rs) using
