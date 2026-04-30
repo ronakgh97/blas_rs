@@ -3,7 +3,7 @@ mod utils;
 
 use crate::harness::{MetricSet, run_bench};
 use crate::utils::{axpy_ob, dot_ob, gemv_ob};
-use blas_rs::lvl1::{axpy, dot};
+use blas_rs::lvl1::{axpy, axpy_no_checks, dot, dot_no_checks};
 use blas_rs::lvl2::gemv;
 use blas_rs::utils::*;
 use std::error::Error;
@@ -153,7 +153,10 @@ fn main() {
             y_buf.fill(1.0);
 
             // Start time bound bench for both
-            let rc = run_bench(|| axpy(i, 3.0, &x_buf, 1, &mut y_buf, 1), target_time);
+            let rc = run_bench(
+                || unsafe { axpy_no_checks(i, 3.0, &x_buf, 1, &mut y_buf, 1) },
+                target_time,
+            );
 
             y_buf.fill(1.0); // reset y_buf for fair bench
 
@@ -176,13 +179,13 @@ fn main() {
                     working_kb,
                 );
 
-            // TODO: this is fine for now
+            // TODO: this is fine for now, but openblas perf is suspiciously low, wtf?
             let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
             let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
 
             metrics_collector.collect(
                 ((i as f64).log10(), gflops),
-                (i as f64, latency.log10()),
+                ((i as f64).log10(), latency.log10()),
                 ((i as f64).log10(), cache_eff),
                 (working_kb.log10(), ns_per_flop),
                 ((i as f64).log10(), gflops_rel),
@@ -227,8 +230,8 @@ fn main() {
             // Start time bound bench
 
             let rc = run_bench(
-                || {
-                    dot(i, &x_buf, 1, &y_buf, 1);
+                || unsafe {
+                    dot_no_checks(i, &x_buf, 1, &y_buf, 1);
                 },
                 target_time,
             );
@@ -259,7 +262,7 @@ fn main() {
 
             metrics_collector.collect(
                 ((i as f64).log10(), gflops),
-                (i as f64, latency.log10()),
+                ((i as f64).log10(), latency.log10()),
                 ((i as f64).log10(), cache_eff),
                 (working_kb.log10(), ns_per_flop),
                 ((i as f64).log10(), gflops_rel),
@@ -359,7 +362,7 @@ fn main() {
 
             metrics_collector.collect(
                 ((i as f64).log10(), gflops),
-                (i as f64, latency.log10()),
+                ((i as f64).log10(), latency.log10()),
                 ((i as f64).log10(), cache_eff),
                 (working_kbyte.log10(), ns_per_flop),
                 ((i as f64).log10(), gflops_rel),
@@ -458,7 +461,7 @@ fn main() {
 
             metrics_collector.collect(
                 ((i as f64).log10(), gflops),
-                (i as f64, latency.log10()),
+                ((i as f64).log10(), latency.log10()),
                 ((i as f64).log10(), cache_eff),
                 (working_kbyte.log10(), ns_per_flop),
                 ((i as f64).log10(), gflops_rel),
@@ -503,7 +506,7 @@ fn plot_bench(bench_metrics: &[BenchMetrics], output: &Path) -> Result<(), Box<d
                     ("log(Size)", "GFLOPS", RED, "GFLOPS", points.as_slice())
                 }
                 Some(BenchMetrics::Latency(points)) => (
-                    "Size",
+                    "log(Size)",
                     "log(Time per Call (ns))",
                     BLUE,
                     "Latency",

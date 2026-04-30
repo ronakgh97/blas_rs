@@ -1,4 +1,4 @@
-use crate::lvl1::{axpy, dot, scal};
+use crate::lvl1::{axpy, axpy_no_checks, dot, dot_no_checks, scal};
 use std::arch::x86_64::{_MM_HINT_ET0, _mm_prefetch};
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
@@ -139,7 +139,7 @@ pub fn gemv(
                         // Compute this chunk
                         // Partial result for this column,
                         // res_buf <- |alpha * col[0] * x[0]| + ... + |alpha * col[n] * x[n]|.
-                        axpy(curr_m, alpha * x_val, col_buf, 1, y_buf, incy); // <-- we put incx as 1 because x which is col is contiguous, go through cmt if you down get it
+                        axpy_no_checks(curr_m, alpha * x_val, col_buf, 1, y_buf, incy); // <-- we put incx as 1 because x which is col is contiguous, go through cmt if you down get it
                     }
                 }
             }
@@ -201,7 +201,7 @@ pub fn gemv(
                         let col_buf = from_raw_parts(col_ptr, curr_m);
 
                         // use `dot` from lvl1, performs col_buf * x_buf
-                        let dot_val = dot(curr_m, col_buf, 1, x_buf, incx); // <- again incx is 1 here, same reason
+                        let dot_val = dot_no_checks(curr_m, col_buf, 1, x_buf, incx); // <- again incx is 1 here, same reason
 
                         // Get location for y[i] and partial apply dot
                         let iy = iy_b + (i as isize * incy as isize);

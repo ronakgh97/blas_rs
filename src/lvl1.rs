@@ -122,6 +122,98 @@ pub fn axpy(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32
 }
 
 #[inline(always)]
+#[allow(clippy::missing_safety_doc)]
+/// The axpy routines compute a scalar-vector product and add the result to a vector.
+/// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/axpy.htmll) for more details
+pub unsafe fn axpy_no_checks(n: usize, alpha: f32, x: &[f32], incx: i32, y: &mut [f32], incy: i32) {
+    let x_ptr = x.as_ptr();
+    let y_ptr = y.as_mut_ptr();
+
+    if incx == 1 && incy == 1 {
+        let mut i = 0;
+
+        // Handle 4 AVX registers at a time
+        unsafe {
+            let alpha_x8 = _mm256_set1_ps(alpha);
+            while i + 32 <= n {
+                // Load from x
+                let x0 = _mm256_loadu_ps(x_ptr.add(i));
+                let x1 = _mm256_loadu_ps(x_ptr.add(i + 8));
+                let x2 = _mm256_loadu_ps(x_ptr.add(i + 16));
+                let x3 = _mm256_loadu_ps(x_ptr.add(i + 24));
+
+                // Load from y
+                let y0 = _mm256_loadu_ps(y_ptr.add(i));
+                let y1 = _mm256_loadu_ps(y_ptr.add(i + 8));
+                let y2 = _mm256_loadu_ps(y_ptr.add(i + 16));
+                let y3 = _mm256_loadu_ps(y_ptr.add(i + 24));
+
+                // FMA, Y += alpha * X
+                let r0 = _mm256_fmadd_ps(alpha_x8, x0, y0);
+                let r1 = _mm256_fmadd_ps(alpha_x8, x1, y1);
+                let r2 = _mm256_fmadd_ps(alpha_x8, x2, y2);
+                let r3 = _mm256_fmadd_ps(alpha_x8, x3, y3);
+
+                // Store results back to y
+                _mm256_storeu_ps(y_ptr.add(i), r0);
+                _mm256_storeu_ps(y_ptr.add(i + 8), r1);
+                _mm256_storeu_ps(y_ptr.add(i + 16), r2);
+                _mm256_storeu_ps(y_ptr.add(i + 24), r3);
+
+                i += 32;
+
+                // I don't know, how to rightfully use this
+                if i + 64 < n {
+                    _mm_prefetch(x_ptr.add(i + 64) as *const i8, _MM_HINT_T2);
+                    _mm_prefetch(y_ptr.add(i + 64) as *const i8, _MM_HINT_NTA);
+                }
+            }
+
+            // Handle one AVX register at a time.
+            while i + 8 <= n {
+                let x0 = _mm256_loadu_ps(x_ptr.add(i));
+                let y0 = _mm256_loadu_ps(y_ptr.add(i));
+                let res0 = _mm256_fmadd_ps(alpha_x8, x0, y0);
+                _mm256_storeu_ps(y_ptr.add(i), res0);
+                i += 8;
+            }
+
+            // Handle remaining elements
+            while i < n {
+                let x_val = *x_ptr.add(i);
+                let y_val = *y_ptr.add(i);
+                *y_ptr.add(i) = alpha.mul_add(x_val, y_val);
+                i += 1;
+            }
+        }
+    } else {
+        let incx = incx as isize;
+        let incy = incy as isize;
+        let mut ix = if incx < 0 {
+            (n as isize - 1) * -incx
+        } else {
+            0
+        };
+        let mut iy = if incy < 0 {
+            (n as isize - 1) * -incy
+        } else {
+            0
+        };
+
+        unsafe {
+            for _ in 0..n {
+                // Y += alpha * X
+                let x_val = *x_ptr.offset(ix);
+                let y_val = *y_ptr.offset(iy);
+                *y_ptr.offset(iy) = alpha.mul_add(x_val, y_val);
+                ix += incx;
+                iy += incy;
+            }
+        }
+    }
+}
+
+#[inline(always)]
 /// The scal routines computes a scalar-vector product.
 /// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/scal.html) for more details
 pub fn scal(n: usize, alpha: f32, x: &mut [f32], incx: i32) {
@@ -322,6 +414,104 @@ pub fn dot(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
         panic!("Length of y does not match expected size based on n and incy");
     }
 
+    let x_ptr = x.as_ptr();
+    let y_ptr = y.as_ptr();
+
+    if incx == 1 && incy == 1 {
+        unsafe {
+            let mut sum0 = _mm256_setzero_ps();
+            let mut sum1 = _mm256_setzero_ps();
+            let mut sum2 = _mm256_setzero_ps();
+            let mut sum3 = _mm256_setzero_ps();
+            let mut i = 0;
+
+            // Load 32 elements (4 AVX registers) at a time and compute partial dot products in parallel
+            while i + 32 <= n {
+                let x0 = _mm256_loadu_ps(x_ptr.add(i));
+                let x1 = _mm256_loadu_ps(x_ptr.add(i + 8));
+                let x2 = _mm256_loadu_ps(x_ptr.add(i + 16));
+                let x3 = _mm256_loadu_ps(x_ptr.add(i + 24));
+
+                let y0 = _mm256_loadu_ps(y_ptr.add(i));
+                let y1 = _mm256_loadu_ps(y_ptr.add(i + 8));
+                let y2 = _mm256_loadu_ps(y_ptr.add(i + 16));
+                let y3 = _mm256_loadu_ps(y_ptr.add(i + 24));
+
+                // 4 accumulators to allow for some instruction-level parallelism, we will sum them up at the end
+                sum0 = _mm256_fmadd_ps(x0, y0, sum0);
+                sum1 = _mm256_fmadd_ps(x1, y1, sum1);
+                sum2 = _mm256_fmadd_ps(x2, y2, sum2);
+                sum3 = _mm256_fmadd_ps(x3, y3, sum3);
+
+                i += 32;
+
+                if i + 48 < n {
+                    _mm_prefetch(x_ptr.add(i + 48) as *const i8, _MM_HINT_T1);
+                    _mm_prefetch(y_ptr.add(i + 48) as *const i8, _MM_HINT_T1);
+                }
+            }
+
+            while i + 8 <= n {
+                let x = _mm256_loadu_ps(x_ptr.add(i));
+                let y = _mm256_loadu_ps(y_ptr.add(i));
+                sum0 = _mm256_fmadd_ps(x, y, sum0);
+                i += 8;
+            }
+
+            let sum = _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3));
+
+            let mut result = from_m256(sum);
+            while i < n {
+                result += x[i] * y[i];
+                i += 1;
+            }
+
+            result
+        }
+    } else {
+        let incx = incx as isize;
+        let incy = incy as isize;
+        let mut ix = if incx < 0 { (1 - n as isize) * incx } else { 0 };
+        let mut iy = if incy < 0 { (1 - n as isize) * incy } else { 0 };
+
+        let mut sum0 = 0.0f32;
+        let mut sum1 = 0.0f32;
+
+        // Have two accumulators for `dot` to allow for some instruction-level parallelism
+        for _ in 0..n / 2 {
+            unsafe {
+                let x_val = *x_ptr.offset(ix);
+                let y_val = *y_ptr.offset(iy);
+                sum0 = x_val.mul_add(y_val, sum0);
+                ix += incx;
+                iy += incy;
+
+                let x_val = *x_ptr.offset(ix);
+                let y_val = *y_ptr.offset(iy);
+                sum1 = x_val.mul_add(y_val, sum1);
+                ix += incx;
+                iy += incy;
+            }
+        }
+
+        // Handle the last element if n is odd
+        if n % 2 == 1 {
+            unsafe {
+                let x_val = *x_ptr.offset(ix);
+                let y_val = *y_ptr.offset(iy);
+                sum0 = x_val.mul_add(y_val, sum0);
+            }
+        }
+
+        sum0 + sum1
+    }
+}
+
+#[inline(always)]
+#[allow(clippy::missing_safety_doc)]
+/// The dot routines perform a dot product between two vectors.
+/// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/dot.html) for more details
+pub unsafe fn dot_no_checks(n: usize, x: &[f32], incx: i32, y: &[f32], incy: i32) -> f32 {
     let x_ptr = x.as_ptr();
     let y_ptr = y.as_ptr();
 

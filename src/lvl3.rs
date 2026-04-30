@@ -1,5 +1,7 @@
-use crate::lvl1::{axpy, dot, scal};
+use crate::lvl1::{axpy, axpy_no_checks, dot, dot_no_checks, scal};
 use std::slice::{from_raw_parts, from_raw_parts_mut};
+
+// TODO: minimal branching, checks and fn call overhead
 
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
@@ -121,7 +123,9 @@ pub fn gemm(
                                     let a_col_buf = unsafe { from_raw_parts(a_col_ptr, curr_e) }; // <-- MATRIX A: row (i_b..i_max) + col (k) * lda
 
                                     // `axpy` C_col = C_col + (scaled_b * A_col)
-                                    axpy(curr_e, scale_b, a_col_buf, 1, c_col_buf, 1); // <- inc* are 1, since cols of A & C are contiguous no matter
+                                    unsafe {
+                                        axpy_no_checks(curr_e, scale_b, a_col_buf, 1, c_col_buf, 1); // <- inc* are 1, since cols of A & C are contiguous no matter
+                                    }
                                 }
                             }
                         }
@@ -166,8 +170,9 @@ pub fn gemm(
                                 let b_col_buf = unsafe { from_raw_parts(b_col_ptr, buf_len) };
 
                                 // compute & apply, using `mul_add` FMA
-                                let partial = dot(buf_len, a_row_buf, 1, b_col_buf, 1);
                                 unsafe {
+                                    let partial =
+                                        dot_no_checks(buf_len, a_row_buf, 1, b_col_buf, 1);
                                     *c_col_ptr.add(r_off) =
                                         alpha.mul_add(partial, *c_col_ptr.add(r_off)); // use rdx because c_col_ptr already points at row i_b
                                 }
@@ -207,9 +212,10 @@ pub fn gemm(
                                     from_raw_parts(b_ptr.add(b_start), (buf_len - 1) * ldb + 1)
                                 };
 
-                                // `dot` that son of a B...
-                                let partial = dot(buf_len, a_row_buf, 1, b_buf, ldb as i32); // <- include stride for col aka, y_buf
                                 unsafe {
+                                    // `dot` that son of a B...
+                                    let partial =
+                                        dot_no_checks(buf_len, a_row_buf, 1, b_buf, ldb as i32); // <- include stride for col aka, y_buf
                                     *c_col_ptr.add(rdx) =
                                         alpha.mul_add(partial, *c_col_ptr.add(rdx));
                                 }
@@ -357,8 +363,7 @@ pub fn gemm_native(
                 // get buf for B vector covering the memory range
                 let b_vec = unsafe { from_raw_parts(b_vec_ptr, b_mem_len) };
 
-                #[allow(clippy::needless_range_loop)]
-                for i in 0..m {
+                for (i, col) in c_col.iter_mut().enumerate().take(m) {
                     // A is stored as k×m. op(A) is A^T (m×k).
                     // we need row i of op(A) -> Col i of stored A, contiguous access.
                     let a_col_ptr = unsafe { a_ptr.add(i * lda) };
@@ -369,7 +374,7 @@ pub fn gemm_native(
                     let prod = dot(k, a_col, 1, b_vec, b_stride);
 
                     // accumulate C[i, j] += alpha * prod
-                    c_col[i] = alpha.mul_add(prod, c_col[i]);
+                    *col += alpha * prod;
                 }
             }
         }
@@ -384,8 +389,8 @@ fn gemm_native_test() {
     use std::time::Instant;
 
     let size = 2156;
-    let runs = 24;
-    let warmup = 10;
+    let runs = 32;
+    let warmup = 12;
 
     let mut a = vec![0.0f32; size * size];
     let mut b = vec![0.0f32; size * size];
@@ -402,13 +407,18 @@ fn gemm_native_test() {
 
     for _ in 0..warmup {
         c1.fill(1.0);
-        gemm(
-            size, size, size, 4.0, &a, size, &b, size, 2.0, &mut c1, size, false, false,
-        );
-
         c2.fill(1.0);
-        gemm_native(
-            size, size, size, 4.0, &a, size, &b, size, 2.0, &mut c2, size, false, false,
+        join(
+            || {
+                gemm(
+                    size, size, size, 4.0, &a, size, &b, size, 2.0, &mut c1, size, false, false,
+                )
+            },
+            || {
+                gemm(
+                    size, size, size, 4.0, &a, size, &b, size, 2.0, &mut c2, size, false, false,
+                )
+            },
         );
     }
 
