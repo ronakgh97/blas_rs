@@ -31,13 +31,15 @@ pub fn gemm(
     let b_cols = if is_trans_b { k } else { n };
 
     if lda == 0 || lda < a_rows {
-        panic!("lda must be > max(m,k) and non-zero");
+        panic!("lda must be >= rows of stored A and non-zero");
     }
+
     if ldb == 0 || ldb < b_rows {
-        panic!("ldb must be > max(k,n) and non-zero");
+        panic!("ldb must be >= rows of stored B and non-zero");
     }
+
     if ldc == 0 || ldc < m {
-        panic!("ldc must be > m and non-zero");
+        panic!("ldc must be >= rows of C and non-zero");
     }
 
     if a.len() < (a_cols - 1) * lda + a_rows {
@@ -52,9 +54,8 @@ pub fn gemm(
 
     // Properly scale C by beta
     for j in 0..n {
-        let strt = j * ldc;
-        let end = j * ldc + m;
-        let col = unsafe { from_raw_parts_mut(c.as_mut_ptr().add(strt), end - strt) };
+        let start = j * ldc;
+        let col = unsafe { from_raw_parts_mut(c.as_mut_ptr().add(start), m) };
         scal(m, beta, col, 1);
     }
 
@@ -99,22 +100,22 @@ pub fn gemm(
 
                             // iter over shared dim in block, for each col in C
                             // for each element, scale by alpha and perform `axpy` on col of A and C
-                            for k in k_b..k_max {
+                            for kk in k_b..k_max {
                                 // grab each element in this col and scale
                                 let b_idx = if is_trans_b {
-                                    j + (k * ldb) // element B[j][k] in n×k storage (transposed)
+                                    j + (kk * ldb) // element B[j][k] in n×k storage (transposed)
                                 } else {
-                                    k + (j * ldb) // element B[k][j] in k×n storage (not transposed)
+                                    kk + (j * ldb) // element B[k][j] in k×n storage (not transposed)
                                 };
                                 let b_val = unsafe { *b_ptr.add(b_idx) };
 
                                 // grab an entire col buf, using k since we are moving down in THAT BLOCK
-                                let a_idx = i_b + (k * lda); // points to starting A[i_b][k], stride by `lda` since we are moving down in col of A
+                                let a_idx = i_b + (kk * lda); // points to starting A[i_b][k], stride by `lda` since we are moving down in col of A
                                 let a_col_ptr = unsafe { a_ptr.add(a_idx) };
                                 let a_col_buf = unsafe { from_raw_parts(a_col_ptr, curr_e) }; // <-- MATRIX A: row (i_b..i_max) + col (k) * lda
 
                                 // `axpy` C_col = C_col + (scaled_b * A_col)
-                                axpy(curr_e, alpha * b_val, a_col_buf, 1, c_col_buf, 1); // <- inc* are 1, since cols of B&C are contiguous no matter
+                                axpy(curr_e, alpha * b_val, a_col_buf, 1, c_col_buf, 1); // <- inc* are 1, since cols of A & C are contiguous no matter
                             }
                         }
                     }
@@ -140,12 +141,11 @@ pub fn gemm(
 
                             // for each row r in i_b block,
                             // we compute partial dot over shared dim (k_b...k_max), and update c[r][j]
-                            for rdx in 0..curr_r {
+                            // compute buf len is same for both buf, since its inner dim, and for dot
+                            let buf_len = k_max - k_b;
+                            for r_off in 0..curr_r {
                                 // absolute row index = start row index of the block + local offset (0...curr_r)
-                                let r = i_b + rdx;
-
-                                // compute buf len is same for both buf, since its inner dim, and for dot
-                                let buf_len = k_max - k_b;
+                                let r = i_b + r_off;
 
                                 // get a row from A in this BLOCK, since A is transposed, we are moving down in row,
                                 // reading ahead from starting index of col i.e. first row index, gives us entire row_buf in current BLOCK
@@ -153,7 +153,7 @@ pub fn gemm(
                                 let a_row_ptr = unsafe { a_ptr.add(a_idx) }; // pointer to the start of row r within this k-block for A^T
                                 let a_row_buf = unsafe { from_raw_parts(a_row_ptr, buf_len) };
 
-                                // get a col from B in this BLOCK
+                                // get stored column r of A, which is logical row r of A^T
                                 let b_idx = k_b + (j * ldb); // element B[k][j] in k×n storage (not transposed)
                                 let b_col_ptr = unsafe { b_ptr.add(b_idx) }; // pointer to the start of column j within this k-block for B
                                 let b_col_buf = unsafe { from_raw_parts(b_col_ptr, buf_len) };
@@ -161,8 +161,8 @@ pub fn gemm(
                                 // compute & apply, using `mul_add` FMA
                                 let partial = dot(buf_len, a_row_buf, 1, b_col_buf, 1);
                                 unsafe {
-                                    *c_col_ptr.add(rdx) =
-                                        alpha.mul_add(partial, *c_col_ptr.add(rdx)); // use rdx because c_col_ptr already points at row i_b
+                                    *c_col_ptr.add(r_off) =
+                                        alpha.mul_add(partial, *c_col_ptr.add(r_off)); // use rdx because c_col_ptr already points at row i_b
                                 }
                             }
                         }
@@ -171,8 +171,45 @@ pub fn gemm(
             }
         }
         // C = alpha * A^T * B^T + beta * C (both transposed) (OUTER PRODUCT)
+        // well, axpy can use here with stride, using col of A^T with stride, and a scalar element from B (INNER PRODUCT)
         (true, true) => {
-            todo!("Developer is too depressed/tired to complete these flags")
+            for j_b in (0..n).step_by(block_n) {
+                let j_max = (j_b + block_n).min(n);
+                for k_b in (0..k).step_by(block_k) {
+                    let k_max = (k_b + block_k).min(k);
+                    for i_b in (0..m).step_by(block_m) {
+                        let i_max = (i_b + block_m).min(m);
+                        let curr_r = i_max - i_b;
+
+                        for j in j_b..j_max {
+                            let c_idx = i_b + j * ldc;
+                            let c_col_ptr = unsafe { c_ptr.add(c_idx) };
+
+                            for rdx in 0..curr_r {
+                                let i = i_b + rdx;
+                                let buf_len = k_max - k_b;
+
+                                // Row i of A^T = column i of stored A (contiguous)
+                                let a_idx = k_b + i * lda;
+                                let a_row_buf =
+                                    unsafe { from_raw_parts(a_ptr.add(a_idx), buf_len) };
+
+                                // Column j of B^T = row j of stored B (strided by ldb)
+                                let b_start = j + k_b * ldb;
+                                let b_slice = unsafe {
+                                    from_raw_parts(b_ptr.add(b_start), (buf_len - 1) * ldb + 1)
+                                };
+
+                                let partial = dot(buf_len, a_row_buf, 1, b_slice, ldb as i32);
+                                unsafe {
+                                    *c_col_ptr.add(rdx) =
+                                        alpha.mul_add(partial, *c_col_ptr.add(rdx));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

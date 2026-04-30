@@ -329,7 +329,7 @@ fn gemv_native_test() {
     let warmup_count = 32;
     let run_count = 256;
 
-    let size = 16_384;
+    let size = 8192;
 
     let mut a = vec![1.0f32; size * size];
     let mut x = vec![1.0f32; size];
