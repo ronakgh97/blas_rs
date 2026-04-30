@@ -3,6 +3,8 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
+/// The gemm routines compute a scalar-matrix-matrix product and add the result to a scalar-matrix product, with general matrices.
+/// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/gemm.html)
 pub fn gemm(
     m: usize,      // rows of C (and A when not transposed)
     n: usize,      // cols of C (and B when not transposed)
@@ -109,13 +111,18 @@ pub fn gemm(
                                 };
                                 let b_val = unsafe { *b_ptr.add(b_idx) };
 
-                                // grab an entire col buf, using k since we are moving down in THAT BLOCK
-                                let a_idx = i_b + (kk * lda); // points to starting A[i_b][k], stride by `lda` since we are moving down in col of A
-                                let a_col_ptr = unsafe { a_ptr.add(a_idx) };
-                                let a_col_buf = unsafe { from_raw_parts(a_col_ptr, curr_e) }; // <-- MATRIX A: row (i_b..i_max) + col (k) * lda
+                                // save compute, if zero
+                                if b_val != 0.0 {
+                                    let scale_b = b_val * alpha;
 
-                                // `axpy` C_col = C_col + (scaled_b * A_col)
-                                axpy(curr_e, alpha * b_val, a_col_buf, 1, c_col_buf, 1); // <- inc* are 1, since cols of A & C are contiguous no matter
+                                    // grab an entire col buf, using k since we are moving down in THAT BLOCK
+                                    let a_idx = i_b + (kk * lda); // points to starting A[i_b][k], stride by `lda` since we are moving down in col of A
+                                    let a_col_ptr = unsafe { a_ptr.add(a_idx) };
+                                    let a_col_buf = unsafe { from_raw_parts(a_col_ptr, curr_e) }; // <-- MATRIX A: row (i_b..i_max) + col (k) * lda
+
+                                    // `axpy` C_col = C_col + (scaled_b * A_col)
+                                    axpy(curr_e, scale_b, a_col_buf, 1, c_col_buf, 1); // <- inc* are 1, since cols of A & C are contiguous no matter
+                                }
                             }
                         }
                     }
@@ -184,23 +191,24 @@ pub fn gemm(
                         for j in j_b..j_max {
                             let c_idx = i_b + j * ldc;
                             let c_col_ptr = unsafe { c_ptr.add(c_idx) };
+                            let buf_len = k_max - k_b;
 
                             for rdx in 0..curr_r {
                                 let i = i_b + rdx;
-                                let buf_len = k_max - k_b;
 
                                 // Row i of A^T = column i of stored A (contiguous)
-                                let a_idx = k_b + i * lda;
+                                let a_idx = k_b + (i * lda);
                                 let a_row_buf =
                                     unsafe { from_raw_parts(a_ptr.add(a_idx), buf_len) };
 
                                 // Column j of B^T = row j of stored B (strided by ldb)
-                                let b_start = j + k_b * ldb;
-                                let b_slice = unsafe {
+                                let b_start = j + (k_b * ldb);
+                                let b_buf = unsafe {
                                     from_raw_parts(b_ptr.add(b_start), (buf_len - 1) * ldb + 1)
                                 };
 
-                                let partial = dot(buf_len, a_row_buf, 1, b_slice, ldb as i32);
+                                // `dot` that son of a B...
+                                let partial = dot(buf_len, a_row_buf, 1, b_buf, ldb as i32); // <- include stride for col aka, y_buf
                                 unsafe {
                                     *c_col_ptr.add(rdx) =
                                         alpha.mul_add(partial, *c_col_ptr.add(rdx));
@@ -214,77 +222,11 @@ pub fn gemm(
     }
 }
 
-#[test]
-fn gemm_test() {
-    use crate::utils::gen_fill;
-    use std::hint::black_box;
-    use std::time::Instant;
-
-    let size = 1024;
-    let runs = 12;
-    let warmup = 6;
-
-    let mut a = vec![0.0f32; size * size];
-    let mut b = vec![0.0f32; size * size];
-    let mut c = vec![0.0f32; size * size];
-
-    black_box(&mut a);
-    black_box(&mut b);
-    black_box(&mut c);
-
-    gen_fill(&mut a);
-    gen_fill(&mut b);
-
-    // correctness check, by comparing with `gemm_checker`, which is a straightforward implementation of gemm without blocking, and definitely not optimized
-    {
-        let mut c1 = vec![0.0f32; size * size];
-        let mut c2 = vec![0.0f32; size * size];
-
-        gemm(
-            size, size, size, 4.0, &a, size, &b, size, 2.0, &mut c1, size, false, false,
-        );
-
-        gemm_checker(
-            size, size, size, 4.0, &a, size, &b, size, 2.0, &mut c2, size, false, false,
-        );
-
-        assert!(
-            c1.iter()
-                .zip(c2.iter())
-                .all(|(&x, &y)| (x - y).abs() < 1e-3)
-        );
-    }
-
-    for _ in 0..warmup {
-        c.fill(0.0);
-        gemm(
-            size, size, size, 4.0, &a, size, &b, size, 2.0, &mut c, size, false, false,
-        );
-    }
-
-    let start = Instant::now();
-    for _ in 0..runs {
-        c.fill(0.0);
-        gemm(
-            size, size, size, 4.0, &a, size, &b, size, 2.0, &mut c, size, false, false,
-        );
-    }
-    let elapsed = start.elapsed();
-
-    let gflops = 2.0 * size.pow(3) as f64 * runs as f64 / elapsed.as_secs_f64() / 1e9;
-
-    println!(
-        "gemm_perf: {}x{}, {} runs, {:.3}s, {:.2} GFLOPS",
-        size,
-        size,
-        runs,
-        elapsed.as_secs_f64(),
-        gflops
-    );
-}
-
 #[allow(clippy::too_many_arguments)]
-pub fn gemm_checker(
+#[inline(always)]
+/// The gemm routines compute a scalar-matrix-matrix product and add the result to a scalar-matrix product, with general matrices.
+/// [ref](https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/gemm.html)
+pub fn gemm_native(
     m: usize,
     n: usize,
     k: usize,
@@ -299,40 +241,219 @@ pub fn gemm_checker(
     is_trans_a: bool,
     is_trans_b: bool,
 ) {
-    assert!(c.len() >= ldc * n);
-
-    // Scale C first by beta
-    for col in 0..n {
-        for row in 0..m {
-            c[row + col * ldc] *= beta;
-        }
+    if m == 0 || n == 0 || k == 0 {
+        return;
     }
 
+    let a_rows = if is_trans_a { k } else { m };
+    let a_cols = if is_trans_a { m } else { k };
+    let b_rows = if is_trans_b { n } else { k };
+    let b_cols = if is_trans_b { k } else { n };
+
+    if lda == 0 || lda < a_rows {
+        panic!("lda must be >= rows of stored A and non-zero");
+    }
+    if ldb == 0 || ldb < b_rows {
+        panic!("ldb must be >= rows of stored B and non-zero");
+    }
+    if ldc == 0 || ldc < m {
+        panic!("ldc must be >= rows of C and non-zero");
+    }
+
+    if a.len() < (a_cols - 1) * lda + a_rows {
+        panic!("Matrix A buffer too small");
+    }
+    if b.len() < (b_cols - 1) * ldb + b_rows {
+        panic!("Matrix B buffer too small");
+    }
+    if c.len() < (n - 1) * ldc + m {
+        panic!("Matrix C buffer too small");
+    }
+
+    // Scale C by beta
     for j in 0..n {
-        for i in 0..m {
-            let mut sum = 0.0f32;
+        let start = j * ldc;
+        let col = unsafe { from_raw_parts_mut(c.as_mut_ptr().add(start), m) };
+        scal(m, beta, col, 1);
+    }
 
-            for p in 0..k {
-                let a_ip = if !is_trans_a {
-                    // A(i, p), A is (m x k) when not transposed
-                    a[i + p * lda]
-                } else {
-                    // A^T(i, p) = A(p, i), A is (k x m) when transposed
-                    a[p + i * lda]
-                };
+    if alpha == 0.0 {
+        return;
+    }
 
-                let b_pj = if !is_trans_b {
-                    // B(p, j), B is (k x n) when not transposed
-                    b[p + j * ldb]
-                } else {
-                    // B^T(p, j) = B(j, p), B is (n x k) when transposed
-                    b[j + p * ldb]
-                };
+    let a_ptr = a.as_ptr();
+    let b_ptr = b.as_ptr();
+    let c_ptr = c.as_mut_ptr();
 
-                sum += a_ip * b_pj;
+    match (is_trans_a, is_trans_b) {
+        // Case 1 & 2: A is NOT transposed
+        // Outer Product / Rank-1 Update approach.
+        // We iterate over the inner dimension k, and for each slice,
+        // perform an AXPY operation C_col += (alpha * B_val) * A_col
+        (false, _) => {
+            for j in 0..n {
+                // Pointer to the start of column j in C
+                let c_col_ptr = unsafe { c_ptr.add(j * ldc) };
+                // Mutable slice for the entire column j (length m)
+                let c_col = unsafe { from_raw_parts_mut(c_col_ptr, m) };
+
+                for p in 0..k {
+                    // Determine the scalar from B(p, j)
+                    let b_val = if is_trans_b {
+                        // B stored as n×k. We want B(p, j).
+                        // Logical B is k×n. Stored B^T is n×k.
+                        // Element is at row j, col p.
+                        unsafe { *b_ptr.add(j + p * ldb) }
+                    } else {
+                        // B stored as k×n. We want B(p, j).
+                        // Element is at row p, col j.
+                        unsafe { *b_ptr.add(p + j * ldb) }
+                    };
+
+                    // Skip zero values
+                    if b_val != 0.0 {
+                        let scale = alpha * b_val;
+
+                        // Pointer to column p of A (A is m×k, not transposed)
+                        let a_col_ptr = unsafe { a_ptr.add(p * lda) };
+                        let a_col = unsafe { from_raw_parts(a_col_ptr, m) };
+
+                        // `axpy` that bitch
+                        // C[:, j] += scale * A[:, p]
+                        axpy(m, scale, a_col, 1, c_col, 1);
+                    }
+                }
             }
+        }
 
-            c[i + j * ldc] += alpha * sum;
+        // Case 3 & 4: A IS transposed
+        // Inner Product / Dot Product approach.
+        // we compute each element C(i, j) individually using DOT.
+        // C(i, j) = A_col_i . B_vec_j
+        (true, _) => {
+            for j in 0..n {
+                // Pointer to column j of C
+                let c_col_ptr = unsafe { c_ptr.add(j * ldc) };
+                let c_col = unsafe { from_raw_parts_mut(c_col_ptr, m) };
+
+                // prepare the vector from B (length k)
+                // we need either a column of B or a row of B (strided)
+                let (b_vec_ptr, b_stride, b_mem_len) = if is_trans_b {
+                    // B stored as n×k. op(B) is B^T (k×n).
+                    // we need col j of op(B) -> Row j of stored B, strided access.
+                    (
+                        unsafe { b_ptr.add(j) },
+                        ldb as i32,
+                        // Memory span required for the buffer,
+                        // from first element at b_ptr + j to last element at b_ptr + j + (k-1)*ldb
+                        if k == 0 { 0 } else { (k - 1) * ldb + 1 },
+                    )
+                } else {
+                    // B stored as k×n. op(B) is B.
+                    // we need col j of B, contiguous access.
+                    (unsafe { b_ptr.add(j * ldb) }, 1, k)
+                };
+
+                // get buf for B vector covering the memory range
+                let b_vec = unsafe { from_raw_parts(b_vec_ptr, b_mem_len) };
+
+                #[allow(clippy::needless_range_loop)]
+                for i in 0..m {
+                    // A is stored as k×m. op(A) is A^T (m×k).
+                    // we need row i of op(A) -> Col i of stored A, contiguous access.
+                    let a_col_ptr = unsafe { a_ptr.add(i * lda) };
+                    let a_col = unsafe { from_raw_parts(a_col_ptr, k) };
+
+                    // `dot` that bitch
+                    // compute dot product A[:, i] . B[:][j]
+                    let prod = dot(k, a_col, 1, b_vec, b_stride);
+
+                    // accumulate C[i, j] += alpha * prod
+                    c_col[i] = alpha.mul_add(prod, c_col[i]);
+                }
+            }
         }
     }
+}
+
+#[test]
+fn gemm_native_test() {
+    use crate::utils::gen_fill;
+    use rayon::join;
+    use std::hint::black_box;
+    use std::time::Instant;
+
+    let size = 2156;
+    let runs = 24;
+    let warmup = 10;
+
+    let mut a = vec![0.0f32; size * size];
+    let mut b = vec![0.0f32; size * size];
+    let mut c1 = vec![0.0f32; size * size];
+    let mut c2 = vec![0.0f32; size * size];
+
+    black_box(&mut a);
+    black_box(&mut b);
+    black_box(&mut c1);
+    black_box(&mut c2);
+
+    gen_fill(&mut a);
+    gen_fill(&mut b);
+
+    for _ in 0..warmup {
+        c1.fill(1.0);
+        gemm(
+            size, size, size, 4.0, &a, size, &b, size, 2.0, &mut c1, size, false, false,
+        );
+
+        c2.fill(1.0);
+        gemm_native(
+            size, size, size, 4.0, &a, size, &b, size, 2.0, &mut c2, size, false, false,
+        );
+    }
+
+    assert!(
+        c1.iter()
+            .zip(c2.iter())
+            .all(|(&x, &y)| (x - y).abs() < 1e-3)
+    );
+
+    c1.fill(1.0);
+    c2.fill(1.0);
+
+    let (dur_native, dur_opt) = join(
+        || {
+            let start = Instant::now();
+            for _ in 0..runs {
+                gemm(
+                    size, size, size, 4.0, &a, size, &b, size, 2.0, &mut c1, size, false, false,
+                );
+            }
+            start.elapsed()
+        },
+        || {
+            let start = Instant::now();
+            for _ in 0..runs {
+                gemm_native(
+                    size, size, size, 4.0, &a, size, &b, size, 2.0, &mut c2, size, false, false,
+                );
+            }
+            start.elapsed()
+        },
+    );
+
+    let total_flops = 2.0 * (size as f64).powi(3) * runs as f64;
+    let gflops_native = total_flops / dur_native.as_secs_f64() / 1e9;
+    let gflops_opt = total_flops / dur_opt.as_secs_f64() / 1e9;
+
+    println!(
+        "gemm_native: {:?} seconds, {:.2} GFLOPS",
+        dur_native.as_secs_f64(),
+        gflops_native
+    );
+    println!(
+        "gemm_opt: {:?} seconds, {:.2} GFLOPS",
+        dur_opt.as_secs_f64(),
+        gflops_opt
+    );
 }

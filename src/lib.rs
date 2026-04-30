@@ -16,6 +16,7 @@
 //!
 //! - lvl1: `axpy`, `scal`, `copy`, `swap`, `dot`, `nrm2`, `asum`, `i_amax`, `rot`, `rotg`.
 //! - lvl2: `gemv`
+//! - lvl3: `gemm`
 //!
 //! ## Usage
 //!

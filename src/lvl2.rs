@@ -329,7 +329,7 @@ fn gemv_native_test() {
     let warmup_count = 32;
     let run_count = 256;
 
-    let size = 8192;
+    let size = 5125;
 
     let mut a = vec![1.0f32; size * size];
     let mut x = vec![1.0f32; size];
@@ -344,7 +344,12 @@ fn gemv_native_test() {
     gen_fill(&mut a);
     gen_fill(&mut x);
 
+    y1.fill(1.0);
+    y2.fill(1.0);
+
     for _ in 0..warmup_count {
+        y1.fill(1.0);
+        y2.fill(1.0);
         join(
             || {
                 gemv_native(size, size, 5.0, &a, size, &x, 1, 7.0, &mut y1, 1, false);
@@ -354,6 +359,14 @@ fn gemv_native_test() {
             },
         );
     }
+    assert!(
+        y1.iter()
+            .zip(y2.iter())
+            .all(|(&v1, &v2)| (v1 - v2).abs() < 1e-3)
+    );
+
+    y1.fill(1.0);
+    y2.fill(1.0);
 
     let (dur_native, dur_opt) = join(
         || {
@@ -377,12 +390,12 @@ fn gemv_native_test() {
     let gflops_opt = total_flops / dur_opt.as_secs_f64() / 1e9;
 
     println!(
-        "gemv_native_test: {}x{}, {} runs, native: {:.3}s ({:.2} GFLOPS), opt: {:.3}s ({:.2} GFLOPS)",
-        size,
-        size,
-        run_count,
+        "gemv_native: {:?} seconds, {:.2} GFLOPS",
         dur_native.as_secs_f64(),
-        gflops_native,
+        gflops_native
+    );
+    println!(
+        "gemv_opt: {:?} seconds, {:.2} GFLOPS",
         dur_opt.as_secs_f64(),
         gflops_opt
     );

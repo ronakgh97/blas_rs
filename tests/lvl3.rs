@@ -1,4 +1,4 @@
-use blas_rs::lvl3::{gemm, gemm_checker};
+use blas_rs::lvl3::gemm;
 
 #[test]
 fn test_gemm_no_trans_basic() {
@@ -342,6 +342,60 @@ fn test_gemm_various_sizes() {
                 size,
                 i
             );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn gemm_checker(
+    m: usize,
+    n: usize,
+    k: usize,
+    alpha: f32,
+    a: &[f32],
+    lda: usize,
+    b: &[f32],
+    ldb: usize,
+    beta: f32,
+    c: &mut [f32],
+    ldc: usize,
+    is_trans_a: bool,
+    is_trans_b: bool,
+) {
+    assert!(c.len() >= ldc * n);
+
+    // Scale C first by beta
+    for col in 0..n {
+        for row in 0..m {
+            c[row + col * ldc] *= beta;
+        }
+    }
+
+    for j in 0..n {
+        for i in 0..m {
+            let mut sum = 0.0f32;
+
+            for p in 0..k {
+                let a_ip = if !is_trans_a {
+                    // A(i, p), A is (m x k) when not transposed
+                    a[i + p * lda]
+                } else {
+                    // A^T(i, p) = A(p, i), A is (k x m) when transposed
+                    a[p + i * lda]
+                };
+
+                let b_pj = if !is_trans_b {
+                    // B(p, j), B is (k x n) when not transposed
+                    b[p + j * ldb]
+                } else {
+                    // B^T(p, j) = B(j, p), B is (n x k) when transposed
+                    b[j + p * ldb]
+                };
+
+                sum += a_ip * b_pj;
+            }
+
+            c[i + j * ldc] += alpha * sum;
         }
     }
 }
