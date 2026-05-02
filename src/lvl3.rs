@@ -1,7 +1,7 @@
 use crate::lvl1::{axpy, axpy_no_checks, dot, dot_no_checks, scal};
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
-// TODO: minimal branching, checks and fn call overhead
+// TODO: minimal branching, checks and (buffered) fn call overhead, clean doc
 
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
@@ -83,7 +83,7 @@ pub fn gemm(
         // C = alpha * A * B^T + beta * C (B transposed)
         // we need JUST a scalar from b, either B[i][j] or B[j][i] and use do OUTER PRODUCT MATMUL
         // while A & C are column contiguous, so using axpy is the right choice here
-        (false, false) | (false, true) => {
+        (false, _) => {
             // iter over block of col of B and C, then inner dim and finally block of row of A and C
             for j_b in (0..n).step_by(block_n) {
                 let j_max = (j_b + block_n).min(n); // <- max col of B and C to process in this block
@@ -135,7 +135,9 @@ pub fn gemm(
         }
         // C = alpha * A^T * B + beta * C (A transposed)
         // compute dot between a row of A^T (contiguous) and a column of B, (INNER PRODUCT)
-        (true, false) => {
+        // C = alpha * A^T * B^T + beta * C (both transposed) (OUTER PRODUCT)
+        // well, dot can use here with stride, using col of A^T with stride, and a scalar element from B (INNER PRODUCT)
+        (true, _) => {
             for j_b in (0..n).step_by(block_n) {
                 let j_max = (j_b + block_n).min(n);
                 for k_b in (0..k).step_by(block_k) {
@@ -156,68 +158,46 @@ pub fn gemm(
                             let buf_len = k_max - k_b;
                             for r_off in 0..curr_r {
                                 // absolute row index = start row index of the block + local offset (0...curr_r)
-                                let r = i_b + r_off;
+                                let i = i_b + r_off;
 
-                                // get a row from A in this BLOCK, since A is transposed, we are moving down in row,
-                                // reading ahead from starting index of col i.e. first row index, gives us entire row_buf in current BLOCK
-                                let a_idx = k_b + (r * lda); // <- points to starting element of col
-                                let a_row_ptr = unsafe { a_ptr.add(a_idx) }; // pointer to the start of row r within this k-block for A^T
-                                let a_row_buf = unsafe { from_raw_parts(a_row_ptr, buf_len) };
+                                if !is_trans_b {
+                                    // get a row from A in this BLOCK, since A is transposed, we are moving down in row,
+                                    // reading ahead from starting index of col i.e. first row index, gives us entire row_buf in current BLOCK
+                                    let a_idx = k_b + (i * lda); // <- points to starting element of col
+                                    let a_row_ptr = unsafe { a_ptr.add(a_idx) }; // pointer to the start of row r within this k-block for A^T
+                                    let a_row_buf = unsafe { from_raw_parts(a_row_ptr, buf_len) };
 
-                                // get stored column r of A, which is logical row r of A^T
-                                let b_idx = k_b + (j * ldb); // element B[k][j] in k×n storage (not transposed)
-                                let b_col_ptr = unsafe { b_ptr.add(b_idx) }; // pointer to the start of column j within this k-block for B
-                                let b_col_buf = unsafe { from_raw_parts(b_col_ptr, buf_len) };
+                                    // B stored as k×n (not transposed), need column j of B (contiguous)
+                                    let b_idx = k_b + (j * ldb); // element B[k][j] in k×n storage (not transposed)
+                                    let b_col_ptr = unsafe { b_ptr.add(b_idx) }; // pointer to the start of column j within this k-block for B
+                                    let b_col_buf = unsafe { from_raw_parts(b_col_ptr, buf_len) };
 
-                                // compute & apply, using `mul_add` FMA
-                                unsafe {
-                                    let partial =
-                                        dot_no_checks(buf_len, a_row_buf, 1, b_col_buf, 1);
-                                    *c_col_ptr.add(r_off) =
-                                        alpha.mul_add(partial, *c_col_ptr.add(r_off)); // use rdx because c_col_ptr already points at row i_b
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // C = alpha * A^T * B^T + beta * C (both transposed) (OUTER PRODUCT)
-        // well, axpy can use here with stride, using col of A^T with stride, and a scalar element from B (INNER PRODUCT)
-        (true, true) => {
-            for j_b in (0..n).step_by(block_n) {
-                let j_max = (j_b + block_n).min(n);
-                for k_b in (0..k).step_by(block_k) {
-                    let k_max = (k_b + block_k).min(k);
-                    for i_b in (0..m).step_by(block_m) {
-                        let i_max = (i_b + block_m).min(m);
-                        let curr_r = i_max - i_b;
+                                    // compute & apply, using `mul_add` FMA
+                                    unsafe {
+                                        let partial =
+                                            dot_no_checks(buf_len, a_row_buf, 1, b_col_buf, 1);
+                                        *c_col_ptr.add(r_off) =
+                                            alpha.mul_add(partial, *c_col_ptr.add(r_off)); // use rdx because c_col_ptr already points at row i_b
+                                    }
+                                } else {
+                                    // Row i of A^T = column i of stored A (contiguous)
+                                    let a_idx = k_b + (i * lda);
+                                    let a_row_buf =
+                                        unsafe { from_raw_parts(a_ptr.add(a_idx), buf_len) };
 
-                        for j in j_b..j_max {
-                            let c_idx = i_b + j * ldc;
-                            let c_col_ptr = unsafe { c_ptr.add(c_idx) };
-                            let buf_len = k_max - k_b;
+                                    // B stored as n×k (transposed), need row j of stored B (strided by ldb)
+                                    let b_start = j + (k_b * ldb);
+                                    let b_buf = unsafe {
+                                        from_raw_parts(b_ptr.add(b_start), (buf_len - 1) * ldb + 1)
+                                    };
 
-                            for rdx in 0..curr_r {
-                                let i = i_b + rdx;
-
-                                // Row i of A^T = column i of stored A (contiguous)
-                                let a_idx = k_b + (i * lda);
-                                let a_row_buf =
-                                    unsafe { from_raw_parts(a_ptr.add(a_idx), buf_len) };
-
-                                // Column j of B^T = row j of stored B (strided by ldb)
-                                let b_start = j + (k_b * ldb);
-                                let b_buf = unsafe {
-                                    from_raw_parts(b_ptr.add(b_start), (buf_len - 1) * ldb + 1)
-                                };
-
-                                unsafe {
-                                    // `dot` that son of a B...
-                                    let partial =
-                                        dot_no_checks(buf_len, a_row_buf, 1, b_buf, ldb as i32); // <- include stride for col aka, y_buf
-                                    *c_col_ptr.add(rdx) =
-                                        alpha.mul_add(partial, *c_col_ptr.add(rdx));
+                                    unsafe {
+                                        // `dot` that son of a B...
+                                        let partial =
+                                            dot_no_checks(buf_len, a_row_buf, 1, b_buf, ldb as i32); // <- include stride for col aka, y_buf
+                                        *c_col_ptr.add(r_off) =
+                                            alpha.mul_add(partial, *c_col_ptr.add(r_off));
+                                    }
                                 }
                             }
                         }

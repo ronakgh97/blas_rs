@@ -3,6 +3,9 @@ use std::arch::x86_64::{_MM_HINT_ET0, _mm_prefetch};
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 // TODO: the order of checks can be improved, if done smartly to avoid unnecessary compute
+
+// TODO: minimal branching, checks and (buffered) fn call overhead, clean doc
+
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
 /// The gemv routines compute a scalar-matrix-vector product and add the result to a scalar-vector product, with a general matrix.

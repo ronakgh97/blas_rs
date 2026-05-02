@@ -25,9 +25,10 @@ TODO:
 - handle NaN, over/underflow, return vs panic and many more edge cases :(
 - test code ref from [this](https://github.com/OpenMathLib/OpenBLAS/tree/develop) repo, currently ai-generated
 - multithreading, GPU maybe?
+- LESS BRANCHING, more SIMD, LESS FN CALLS, better DATA_READ
 
 run [bench](./bench/bencher.rs) using
-`cargo run --bin bencher --release` [ref](https://github.com/OpenMathLib/OpenBLAS/tree/develop/benchmark)
+`cargo run --bin bencher --release all` [ref](https://github.com/OpenMathLib/OpenBLAS/tree/develop/benchmark)
 
 > NOTE: need openBlas installed in system
 
@@ -44,20 +45,20 @@ gemv: +399%gflops, -79%latency
 gemv_t: +793%gflops, -88%latency
 ```
 
-all are single threaded!!! ran on i7 14650hx, rust 1.94.1
+all are single threaded!!! ran on i7 14650hx, rust 1.95.0
 
 ### axpy
 
-![plot](bench/axpy.png)
+![plot](bench/plot/axpy.png)
 
 ### dot
 
-![plot](bench/dot.png)
+![plot](bench/plot/dot.png)
 
 ### gemv
 
-![plot](bench/gemv.png)
+![plot](bench/plot/gemv.png)
 
 ### gemv_t
 
-![plot](bench/gemv_t.png)
+![plot](bench/plot/gemv_t.png)
