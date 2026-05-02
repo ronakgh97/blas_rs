@@ -113,7 +113,8 @@ enum BenchMetrics {
     Gflops(Vec<(f64, f64)>),
     Latency(Vec<(f64, f64)>),
     CacheEfficiency(Vec<(f64, f64)>), // LLC fit proxy
-    // a bit heuristic, but we can see how much performance cost we pay per flop as working set grows, higher means more cache miss
+    // a bit heuristic, but we can see how much performance cost,
+    // we pay per flop as working set grows, higher means more cache miss
     CacheMiss(Vec<(f64, f64)>),
     CompareGflops(Vec<(f64, f64)>),
     CompareLatency(Vec<(f64, f64)>),
@@ -134,358 +135,413 @@ fn main() {
     let target_time = TAU; // big enough to run least some runs in largest samples
     let size_sample = [128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768];
 
-    let plot_path = Path::new("./bench");
+    let plot_path = Path::new("./bench/plot");
 
-    // axpy
-    {
-        let mut bench_metrics: Vec<BenchMetrics> = Vec::new();
+    let kernel: String = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "all".to_string())
+        .to_lowercase();
 
-        let mut metrics_collector = MetricSet::new();
-
-        for i in size_sample {
-            let mut x_buf = vec![0.0f32; i];
-            let mut y_buf = vec![0.0f32; i];
-
-            black_box(&mut x_buf);
-            black_box(&mut y_buf);
-
-            gen_fill(&mut x_buf);
-            y_buf.fill(1.0);
-
-            // Start time bound bench for both
-            let rc = run_bench(
-                || unsafe { axpy_no_checks(i, 3.0, &x_buf, 1, &mut y_buf, 1) },
-                target_time,
-            );
-
-            y_buf.fill(1.0); // reset y_buf for fair bench
-
-            let rc_ob = run_bench(
-                || axpy_ob(i as i32, 3.0, &x_buf, 1, &mut y_buf, 1),
-                target_time,
-            );
-
-            let working_kb = 3.0 * i as f64 * size_of::<f32>() as f64 / 1024.0; // x read + y read/write
-            let total_flops = 2.0 * i as f64 * rc; // 2n FLOPs per axpy call
-            let total_flops_ob = 2.0 * i as f64 * rc_ob;
-
-            let (gflops, gflops_ob, latency, latency_ob, cache_eff, ns_per_flop) =
-                MetricSet::derive(
-                    rc,
-                    rc_ob,
-                    target_time,
-                    total_flops,
-                    total_flops_ob,
-                    working_kb,
-                );
-
-            // TODO: this is fine for now, but openblas perf is suspiciously low, wtf?
-            let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
-            let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
-
-            metrics_collector.collect(
-                ((i as f64).log10(), gflops),
-                ((i as f64).log10(), latency.log10()),
-                ((i as f64).log10(), cache_eff),
-                (working_kb.log10(), ns_per_flop),
-                ((i as f64).log10(), gflops_rel),
-                ((i as f64).log10(), latency_rel),
-            );
-
-            println!(
-                "S: {}, R: {}, Gflops: {}, Gflops_rel: {}%, Latency_rel: {}%, Cache fit: {} %",
-                i, rc, gflops, gflops_rel, latency_rel, cache_eff
-            );
-
-            // reset, avoid hot cache possibility, we don't do TRUST ME BRO BENCH
-            gen_fill(&mut x_buf);
-            y_buf.fill(1.0);
+    match kernel.as_str() {
+        "axpy" => {
+            println!("Running AXPY benchmark...");
+            bench_axpy(&size_sample, target_time, plot_path)
         }
-        metrics_collector.finalize(&mut bench_metrics);
-
-        match plot_bench(&bench_metrics, &plot_path.join("axpy.png")) {
-            Ok(_) => println!("Exported"),
-            Err(err) => {
-                eprintln!("failed to render benchmark plot: {err}");
-            }
+        "dot" => {
+            println!("Running DOT benchmark...");
+            bench_dot(&size_sample, target_time, plot_path)
+        }
+        "gemv" => {
+            println!("Running GEMV benchmark...");
+            bench_gemv(&size_sample, target_time, plot_path)
+        }
+        "gemv_t" => {
+            println!("Running GEMV Transposed benchmark...");
+            bench_gemv_t(&size_sample, target_time, plot_path)
+        }
+        "all" => {
+            println!("Running all benchmarks...");
+            bench_axpy(&size_sample, target_time, plot_path);
+            bench_dot(&size_sample, target_time, plot_path);
+            bench_gemv(&size_sample, target_time, plot_path);
+            bench_gemv_t(&size_sample, target_time, plot_path);
+        }
+        _ => {
+            eprintln!("Please specify a kernel to bench: axpy, dot, gemv, gemv_t, or all");
         }
     }
+}
 
-    // dot
-    {
-        let mut metrics: Vec<BenchMetrics> = Vec::new();
+fn bench_axpy(size_sample: &[usize], target_time: f64, plot_path: &Path) {
+    let mut bench_metrics: Vec<BenchMetrics> = Vec::new();
 
-        let mut metrics_collector = MetricSet::new();
+    let mut metrics_collector = MetricSet::new();
 
-        for i in size_sample {
-            let mut x_buf = vec![0.0f32; i];
-            let mut y_buf = vec![0.0f32; i];
+    for &i in size_sample {
+        let mut x_buf = vec![0.0f32; i];
+        let mut y1_buf = vec![0.0f32; i];
+        let mut y2_buf = vec![0.0f32; i];
 
-            black_box(&mut x_buf);
-            black_box(&mut y_buf);
+        black_box(&mut x_buf);
+        black_box(&mut y1_buf);
+        black_box(&mut y1_buf);
 
-            gen_fill(&mut x_buf);
-            gen_fill(&mut y_buf);
+        gen_fill(&mut x_buf);
+        y1_buf.fill(1.0);
 
-            // Start time bound bench
+        // Start time bound bench for both
+        let rc = run_bench(
+            || unsafe { axpy_no_checks(i, 3.0, &x_buf, 1, &mut y1_buf, 1) },
+            target_time,
+        );
 
-            let rc = run_bench(
-                || unsafe {
-                    dot_no_checks(i, &x_buf, 1, &y_buf, 1);
-                },
-                target_time,
-            );
+        y2_buf.fill(1.0); // use diff buf to prevent overflow
 
-            let rc_ob = run_bench(
-                || {
-                    dot_ob(i as i32, &x_buf, 1, &y_buf, 1);
-                },
-                target_time,
-            );
+        let rc_ob = run_bench(
+            || axpy_ob(i as i32, 3.0, &x_buf, 1, &mut y2_buf, 1),
+            target_time,
+        );
 
-            let working_kb = 2.0 * i as f64 * size_of::<f32>() as f64 / 1024.0; // x read + y read/write
-            let total_flops = 2.0 * i as f64 * rc; // 2n FLOPs per axpy call
-            let total_flops_ob = 2.0 * i as f64 * rc_ob;
+        let working_kb = 3.0 * i as f64 * size_of::<f32>() as f64 / 1024.0; // x read + y read/write
+        let total_flops = 2.0 * i as f64 * rc; // 2n FLOPs per axpy call
+        let total_flops_ob = 2.0 * i as f64 * rc_ob;
 
-            let (gflops, gflops_ob, latency, latency_ob, cache_eff, ns_per_flop) =
-                MetricSet::derive(
-                    rc,
-                    rc_ob,
-                    target_time,
-                    total_flops,
-                    total_flops_ob,
-                    working_kb,
-                );
+        let (gflops, gflops_ob, latency, latency_ob, cache_eff, ns_per_flop) = MetricSet::derive(
+            rc,
+            rc_ob,
+            target_time,
+            total_flops,
+            total_flops_ob,
+            working_kb,
+        );
 
-            let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
-            let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
+        // TODO: this is fine for now, but openblas perf is suspiciously low, wtf?
+        let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
+        let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
 
-            metrics_collector.collect(
-                ((i as f64).log10(), gflops),
-                ((i as f64).log10(), latency.log10()),
-                ((i as f64).log10(), cache_eff),
-                (working_kb.log10(), ns_per_flop),
-                ((i as f64).log10(), gflops_rel),
-                ((i as f64).log10(), latency_rel),
-            );
+        metrics_collector.collect(
+            ((i as f64).log10(), gflops),
+            ((i as f64).log10(), latency.log10()),
+            ((i as f64).log10(), cache_eff),
+            (working_kb.log10(), ns_per_flop),
+            ((i as f64).log10(), gflops_rel),
+            ((i as f64).log10(), latency_rel),
+        );
 
-            println!(
-                "S: {}, R: {}, Gflops: {}, Gflops_rel: {}%, Latency_rel: {}%, Cache fit: {} %",
-                i, rc, gflops, gflops_rel, latency_rel, cache_eff
-            );
+        println!(
+            "S: {}, R: {}, Gflops: {}, Gflops_rel: {}%, Latency_rel: {}%, Cache fit: {} %",
+            i, rc, gflops, gflops_rel, latency_rel, cache_eff
+        );
 
-            // reset, avoid hot cache possibility, we don't do 'TRUST ME BRO' BENCH
-            gen_fill(&mut x_buf);
-            gen_fill(&mut y_buf);
-        }
+        // reset, avoid hot cache possibility, we don't do TRUST ME BRO BENCH
+        gen_fill(&mut x_buf);
+        y1_buf.fill(1.0);
+        y2_buf.fill(1.0);
+    }
+    metrics_collector.finalize(&mut bench_metrics);
 
-        metrics_collector.finalize(&mut metrics);
-
-        match plot_bench(&metrics, &plot_path.join("dot.png")) {
-            Ok(_) => println!("Exported"),
-            Err(err) => {
-                eprintln!("failed to render benchmark plot: {err}");
-            }
+    match plot_bench(&bench_metrics, &plot_path.join("axpy.png")) {
+        Ok(_) => println!("Exported"),
+        Err(err) => {
+            eprintln!("failed to render benchmark plot: {err}");
         }
     }
+}
 
-    // Gemv & Gemv_t
-    {
-        let mut metrics: Vec<BenchMetrics> = Vec::new();
+fn bench_dot(size_sample: &[usize], target_time: f64, plot_path: &Path) {
+    let mut metrics: Vec<BenchMetrics> = Vec::new();
 
-        let mut metrics_collector = MetricSet::new();
+    let mut metrics_collector = MetricSet::new();
 
-        for i in size_sample {
-            let mut a_buf = vec![0.0f32; i * i];
-            let mut x_buf = vec![0.0f32; i];
-            let mut y_buf = vec![0.0f32; i];
+    for &i in size_sample {
+        let mut x_buf = vec![0.0f32; i];
+        let mut y1_buf = vec![0.0f32; i];
+        let mut y2_buf = vec![0.0f32; i];
 
-            black_box(&mut a_buf);
-            black_box(&mut x_buf);
-            black_box(&mut y_buf);
+        gen_fill(&mut x_buf);
+        black_box(&mut y1_buf);
+        black_box(&mut y2_buf);
 
-            gen_fill(&mut a_buf);
-            gen_fill(&mut x_buf);
-            y_buf.fill(1.0);
+        y1_buf.fill(1.0);
 
-            // Start time bound bench
-            let rc = run_bench(
-                || {
-                    gemv(
-                        i, // m
-                        i, // n
-                        5.0, &a_buf, // matrix
-                        i,      // lda
-                        &x_buf, // vec
-                        1, 7.0, &mut y_buf, // result y
-                        1, false,
-                    );
-                },
-                target_time,
-            );
+        // Start time bound bench
 
-            y_buf.fill(1.0); // reset y_buf for fair bench
+        let rc = run_bench(
+            || unsafe {
+                dot_no_checks(i, &x_buf, 1, &y1_buf, 1);
+            },
+            target_time,
+        );
+        y2_buf.fill(1.0);
 
-            let rc_ob = run_bench(
-                || {
-                    gemv_ob(
-                        i as i32, // m
-                        i as i32, // n
-                        5.0, &a_buf,   // matrix
-                        i as i32, // lda
-                        &x_buf,   // vec
-                        1, 7.0, &mut y_buf, // result y
-                        1, false,
-                    );
-                },
-                target_time,
-            );
+        let rc_ob = run_bench(
+            || {
+                dot_ob(i as i32, &x_buf, 1, &y2_buf, 1);
+            },
+            target_time,
+        );
 
-            // no of (matrix + vector) element * write/read ops (2)
-            let working_kbyte =
-                (i.pow(2) as f64 + 3.0 * i as f64) * size_of::<f32>() as f64 / 1024.0;
-            let total_flops = 2.0 * i.pow(2) as f64 * rc;
-            let total_flops_ob = 2.0 * i.pow(2) as f64 * rc_ob;
+        let working_kb = 2.0 * i as f64 * size_of::<f32>() as f64 / 1024.0; // x read + y read/write
+        let total_flops = 2.0 * i as f64 * rc; // 2n FLOPs per axpy call
+        let total_flops_ob = 2.0 * i as f64 * rc_ob;
 
-            let (gflops, gflops_ob, latency, latency_ob, cache_eff, ns_per_flop) =
-                MetricSet::derive(
-                    rc,
-                    rc_ob,
-                    target_time,
-                    total_flops,
-                    total_flops_ob,
-                    working_kbyte,
-                );
+        let (gflops, gflops_ob, latency, latency_ob, cache_eff, ns_per_flop) = MetricSet::derive(
+            rc,
+            rc_ob,
+            target_time,
+            total_flops,
+            total_flops_ob,
+            working_kb,
+        );
 
-            let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
-            let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
+        let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
+        let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
 
-            metrics_collector.collect(
-                ((i as f64).log10(), gflops),
-                ((i as f64).log10(), latency.log10()),
-                ((i as f64).log10(), cache_eff),
-                (working_kbyte.log10(), ns_per_flop),
-                ((i as f64).log10(), gflops_rel),
-                ((i as f64).log10(), latency_rel),
-            );
+        metrics_collector.collect(
+            ((i as f64).log10(), gflops),
+            ((i as f64).log10(), latency.log10()),
+            ((i as f64).log10(), cache_eff),
+            (working_kb.log10(), ns_per_flop),
+            ((i as f64).log10(), gflops_rel),
+            ((i as f64).log10(), latency_rel),
+        );
 
-            println!(
-                "S: {}, R: {}, Gflops: {}, Gflops_rel: {}%, Latency_rel: {}%, Cache fit: {} %",
-                i, rc, gflops, gflops_rel, latency_rel, cache_eff
-            );
+        println!(
+            "S: {}, R: {}, Gflops: {}, Gflops_rel: {}%, Latency_rel: {}%, Cache fit: {} %",
+            i, rc, gflops, gflops_rel, latency_rel, cache_eff
+        );
 
-            // reset, avoid hot cache possibility
-            gen_fill(&mut a_buf);
-            gen_fill(&mut x_buf);
-            y_buf.fill(1.0);
-        }
-
-        metrics_collector.finalize(&mut metrics);
-
-        match plot_bench(&metrics, &plot_path.join("gemv.png")) {
-            Ok(_) => println!("Exported"),
-            Err(err) => {
-                eprintln!("failed to render benchmark plot: {err}");
-            }
-        }
+        // reset, avoid hot cache possibility, we don't do 'TRUST ME BRO' BENCH
+        gen_fill(&mut x_buf);
+        gen_fill(&mut y1_buf);
+        gen_fill(&mut y2_buf);
     }
 
-    {
-        let mut metrics: Vec<BenchMetrics> = Vec::new();
+    metrics_collector.finalize(&mut metrics);
 
-        let mut metrics_collector = MetricSet::new();
-
-        for i in size_sample {
-            let mut a_buf = vec![0.0f32; i * i];
-            let mut x_buf = vec![0.0f32; i];
-            let mut y_buf = vec![0.0f32; i];
-
-            black_box(&mut a_buf);
-            black_box(&mut x_buf);
-            black_box(&mut y_buf);
-
-            gen_fill(&mut a_buf);
-            gen_fill(&mut x_buf);
-            y_buf.fill(1.0);
-
-            // Start time bound bench
-            let rc = run_bench(
-                || {
-                    gemv(
-                        i, // m
-                        i, // n
-                        5.0, &a_buf, // matrix
-                        i,      // lda
-                        &x_buf, // vec
-                        1, 7.0, &mut y_buf, // result y
-                        1, true,
-                    );
-                },
-                target_time,
-            );
-
-            y_buf.fill(1.0); // reset y_buf for fair bench
-
-            let rc_ob = run_bench(
-                || {
-                    gemv_ob(
-                        i as i32, // m
-                        i as i32, // n
-                        5.0, &a_buf,   // matrix
-                        i as i32, // lda
-                        &x_buf,   // vec
-                        1, 7.0, &mut y_buf, // result y
-                        1, true,
-                    );
-                },
-                target_time,
-            );
-
-            let working_kbyte =
-                (i.pow(2) as f64 + 3.0 * i as f64) * size_of::<f32>() as f64 / 1024.0;
-            let total_flops = 2.0 * i.pow(2) as f64 * rc;
-            let total_flops_ob = 2.0 * i.pow(2) as f64 * rc_ob;
-
-            let (gflops, gflops_ob, latency, latency_ob, cache_eff, ns_per_flop) =
-                MetricSet::derive(
-                    rc,
-                    rc_ob,
-                    target_time,
-                    total_flops,
-                    total_flops_ob,
-                    working_kbyte,
-                );
-
-            let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
-            let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
-
-            metrics_collector.collect(
-                ((i as f64).log10(), gflops),
-                ((i as f64).log10(), latency.log10()),
-                ((i as f64).log10(), cache_eff),
-                (working_kbyte.log10(), ns_per_flop),
-                ((i as f64).log10(), gflops_rel),
-                ((i as f64).log10(), latency_rel),
-            );
-
-            println!(
-                "S: {}, R: {}, Gflops: {}, Gflops_rel: {}%, Latency_rel: {}%, Cache fit: {} %",
-                i, rc, gflops, gflops_rel, latency_rel, cache_eff
-            );
-
-            // reset, avoid hot cache possibility
-            gen_fill(&mut a_buf);
-            gen_fill(&mut x_buf);
-            y_buf.fill(1.0);
+    match plot_bench(&metrics, &plot_path.join("dot.png")) {
+        Ok(_) => println!("Exported"),
+        Err(err) => {
+            eprintln!("failed to render benchmark plot: {err}");
         }
+    }
+}
 
-        metrics_collector.finalize(&mut metrics);
+fn bench_gemv(size_sample: &[usize], target_time: f64, plot_path: &Path) {
+    let mut metrics: Vec<BenchMetrics> = Vec::new();
 
-        match plot_bench(&metrics, &plot_path.join("gemv_t.png")) {
-            Ok(_) => println!("Exported"),
-            Err(err) => {
-                eprintln!("failed to render benchmark plot: {err}");
-            }
+    let mut metrics_collector = MetricSet::new();
+
+    for &i in size_sample {
+        let mut a_buf = vec![0.0f32; i * i];
+        let mut x_buf = vec![0.0f32; i];
+        let mut y1_buf = vec![0.0f32; i];
+        let mut y2_buf = vec![0.0f32; i];
+
+        black_box(&mut a_buf);
+        black_box(&mut x_buf);
+        black_box(&mut y1_buf);
+        black_box(&mut y2_buf);
+
+        gen_fill(&mut a_buf);
+        gen_fill(&mut x_buf);
+
+        y1_buf.fill(1.0);
+
+        // Start time bound bench
+        let rc = run_bench(
+            || {
+                gemv(
+                    i, // m
+                    i, // n
+                    5.0,
+                    &a_buf, // matrix
+                    i,      // lda
+                    &x_buf, // vec
+                    1,
+                    7.0,
+                    &mut y1_buf, // result y
+                    1,
+                    false,
+                );
+            },
+            target_time,
+        );
+
+        y2_buf.fill(1.0); // prevent overflow
+
+        let rc_ob = run_bench(
+            || {
+                gemv_ob(
+                    i as i32, // m
+                    i as i32, // n
+                    5.0,
+                    &a_buf,   // matrix
+                    i as i32, // lda
+                    &x_buf,   // vec
+                    1,
+                    7.0,
+                    &mut y2_buf, // result y
+                    1,
+                    false,
+                );
+            },
+            target_time,
+        );
+
+        // no of (matrix + vector) element * write/read ops (2)
+        let working_kbyte = (i.pow(2) as f64 + 3.0 * i as f64) * size_of::<f32>() as f64 / 1024.0;
+        let total_flops = 2.0 * i.pow(2) as f64 * rc;
+        let total_flops_ob = 2.0 * i.pow(2) as f64 * rc_ob;
+
+        let (gflops, gflops_ob, latency, latency_ob, cache_eff, ns_per_flop) = MetricSet::derive(
+            rc,
+            rc_ob,
+            target_time,
+            total_flops,
+            total_flops_ob,
+            working_kbyte,
+        );
+
+        let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
+        let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
+
+        metrics_collector.collect(
+            ((i as f64).log10(), gflops),
+            ((i as f64).log10(), latency.log10()),
+            ((i as f64).log10(), cache_eff),
+            (working_kbyte.log10(), ns_per_flop),
+            ((i as f64).log10(), gflops_rel),
+            ((i as f64).log10(), latency_rel),
+        );
+
+        println!(
+            "S: {}, R: {}, Gflops: {}, Gflops_rel: {}%, Latency_rel: {}%, Cache fit: {} %",
+            i, rc, gflops, gflops_rel, latency_rel, cache_eff
+        );
+
+        // reset, avoid hot cache possibility
+        gen_fill(&mut a_buf);
+        gen_fill(&mut x_buf);
+        y1_buf.fill(1.0);
+        y2_buf.fill(1.0);
+    }
+
+    metrics_collector.finalize(&mut metrics);
+
+    match plot_bench(&metrics, &plot_path.join("gemv.png")) {
+        Ok(_) => println!("Exported"),
+        Err(err) => {
+            eprintln!("failed to render benchmark plot: {err}");
+        }
+    }
+}
+
+fn bench_gemv_t(size_sample: &[usize], target_time: f64, plot_path: &Path) {
+    let mut metrics: Vec<BenchMetrics> = Vec::new();
+
+    let mut metrics_collector = MetricSet::new();
+
+    for &i in size_sample {
+        let mut a_buf = vec![0.0f32; i * i];
+        let mut x_buf = vec![0.0f32; i];
+        let mut y1_buf = vec![0.0f32; i];
+        let mut y2_buf = vec![0.0f32; i];
+
+        black_box(&mut a_buf);
+        black_box(&mut x_buf);
+        black_box(&mut y1_buf);
+        black_box(&mut y2_buf);
+
+        gen_fill(&mut a_buf);
+        gen_fill(&mut x_buf);
+
+        y1_buf.fill(1.0);
+
+        // Start time bound bench
+        let rc = run_bench(
+            || {
+                gemv(
+                    i, // m
+                    i, // n
+                    5.0,
+                    &a_buf, // matrix
+                    i,      // lda
+                    &x_buf, // vec
+                    1,
+                    7.0,
+                    &mut y1_buf, // result y
+                    1,
+                    true,
+                );
+            },
+            target_time,
+        );
+
+        y2_buf.fill(1.0);
+
+        let rc_ob = run_bench(
+            || {
+                gemv_ob(
+                    i as i32, // m
+                    i as i32, // n
+                    5.0,
+                    &a_buf,   // matrix
+                    i as i32, // lda
+                    &x_buf,   // vec
+                    1,
+                    7.0,
+                    &mut y2_buf, // result y
+                    1,
+                    true,
+                );
+            },
+            target_time,
+        );
+
+        let working_kbyte = (i.pow(2) as f64 + 3.0 * i as f64) * size_of::<f32>() as f64 / 1024.0;
+        let total_flops = 2.0 * i.pow(2) as f64 * rc;
+        let total_flops_ob = 2.0 * i.pow(2) as f64 * rc_ob;
+
+        let (gflops, gflops_ob, latency, latency_ob, cache_eff, ns_per_flop) = MetricSet::derive(
+            rc,
+            rc_ob,
+            target_time,
+            total_flops,
+            total_flops_ob,
+            working_kbyte,
+        );
+
+        let gflops_rel = (gflops - gflops_ob) / gflops_ob * 100.0;
+        let latency_rel = (latency - latency_ob) / latency_ob * 100.0;
+
+        metrics_collector.collect(
+            ((i as f64).log10(), gflops),
+            ((i as f64).log10(), latency.log10()),
+            ((i as f64).log10(), cache_eff),
+            (working_kbyte.log10(), ns_per_flop),
+            ((i as f64).log10(), gflops_rel),
+            ((i as f64).log10(), latency_rel),
+        );
+
+        println!(
+            "S: {}, R: {}, Gflops: {}, Gflops_rel: {}%, Latency_rel: {}%, Cache fit: {} %",
+            i, rc, gflops, gflops_rel, latency_rel, cache_eff
+        );
+
+        // reset, avoid hot cache possibility
+        gen_fill(&mut a_buf);
+        gen_fill(&mut x_buf);
+        y1_buf.fill(1.0);
+        y2_buf.fill(1.0);
+    }
+
+    metrics_collector.finalize(&mut metrics);
+
+    match plot_bench(&metrics, &plot_path.join("gemv_t.png")) {
+        Ok(_) => println!("Exported"),
+        Err(err) => {
+            eprintln!("failed to render benchmark plot: {err}");
         }
     }
 }
