@@ -368,7 +368,7 @@ fn gemm_native_test() {
     use std::hint::black_box;
     use std::time::Instant;
 
-    let size = 2156;
+    let size = 2048;
     let runs = 32;
     let warmup = 12;
 

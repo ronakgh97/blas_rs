@@ -36,16 +36,8 @@ run [bench](./bench/bencher.rs) using
   `.\vcpkg install openblas:x64-windows` and `setx VCPKG_ROOT=C:\path\to\vcpkg`
 - linux: `sudo apt install libopenblas-dev pkg-config` or `sudo pacman -S openblas pkg-config`
 
-bench highlights: wrt/Openblas
-
-```text
-axpy: +620%gflops, -86%latency
-dot: +1803%gflops, -94%latency
-gemv: +399%gflops, -79%latency
-gemv_t: +793%gflops, -88%latency
-```
-
-all are single threaded!!! ran on i7 14650hx, rust 1.95.0
+> all are single threaded!!! ran on i7 14650hx, rust 1.95.0 -
+> looks like my bench is way too good, since openblas isn't running NATIVE
 
 ### axpy
 

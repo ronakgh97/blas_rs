@@ -2,7 +2,7 @@ use blas_rs::lvl2::gemv;
 use std::panic::catch_unwind;
 
 #[test]
-fn test_gemv_no_trans_basic() {
+fn test_gemv_no_trans() {
     // A (2x3), column-major:
     // [1 2 3]
     // [4 5 6]

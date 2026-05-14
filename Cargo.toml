@@ -27,4 +27,4 @@ plotters = "0.3.7" # for plotting benchmarks
 blas = "0.23.0" # for BLAS bindings, used in the reference implementation and benchmarks
 # externel deps, make sure to have OpenBLAS installed on your system and properly linked, or it won't compile
 # check readme for instructions
-openblas-src = { version = "0.10.15", features = ["system"] }
+openblas-src = { version = "0.10.16", features = ["system"] }

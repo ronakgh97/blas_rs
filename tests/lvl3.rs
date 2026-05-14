@@ -1,7 +1,7 @@
 use blas_rs::lvl3::gemm;
 
 #[test]
-fn test_gemm_no_trans_basic() {
+fn test_gemm_no_trans() {
     let m = 3_usize;
     let n = 3_usize;
     let k = 3_usize;

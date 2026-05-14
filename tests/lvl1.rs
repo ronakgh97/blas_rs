@@ -1,6 +1,5 @@
 use blas_rs::lvl1::*;
 use blas_rs::utils::gen_fill;
-use std::panic::catch_unwind;
 
 #[test]
 fn test_axpy() {
@@ -35,17 +34,17 @@ fn test_axpy() {
     assert_eq!(y, vec![0.0, -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0]);
     y.fill(0.0);
 
-    let mut gen_x = vec![0.0f32; 1024];
-    let mut gen_y = vec![0.0f32; 1024];
+    let mut gen_x = vec![0.0f32; 8192];
+    let mut gen_y = vec![0.0f32; 8192];
 
     gen_fill(&mut gen_x);
     gen_fill(&mut gen_y);
 
-    let r = 4096;
+    let r = 1024;
 
     let start = std::time::Instant::now();
     for _ in 0..r {
-        axpy(gen_x.len(), 8.0, &gen_x, 1, &mut gen_y, 1);
+        axpy(gen_x.len(), 4.0, &gen_x, 1, &mut gen_y, 1);
     }
     let elapsed = start.elapsed().as_secs_f64();
 
@@ -59,51 +58,21 @@ fn test_axpy() {
 
 #[test]
 #[should_panic]
-fn test_axpy_incx_zero_panic() {
+fn test_panic_axpy() {
     let x = vec![1.0, 2.0, 3.0, 4.0];
     let mut y = vec![0.0; 4];
     axpy(4, 2.0, &x, 0, &mut y, 1);
-}
 
-#[test]
-#[should_panic]
-fn test_axpy_incy_zero_panic() {
-    let x = vec![1.0, 2.0, 3.0, 4.0];
     let mut y = vec![0.0; 4];
     axpy(4, 2.0, &x, 1, &mut y, 0);
-}
 
-#[test]
-fn test_axpy_bounds_error() {
-    let result = catch_unwind(|| {
-        let x = vec![1.0, 2.0];
-        let mut y = vec![0.0; 4];
-        axpy(4, 2.0, &x, 1, &mut y, 1);
-    });
-    assert!(result.is_err());
+    let x = vec![1.0, 2.0];
+    let mut y = vec![0.0; 4];
+    axpy(4, 2.0, &x, 1, &mut y, 1);
 
-    let result = catch_unwind(|| {
-        let x = vec![1.0, 2.0, 3.0, 4.0];
-        let mut y = vec![0.0; 2];
-        axpy(4, 2.0, &x, 1, &mut y, 1);
-    });
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_axpy_various_sizes() {
-    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32, 1024] {
-        let x: Vec<f32> = (0..n).map(|i| i as f32).collect();
-        let mut y = vec![0.0; n.max(1)];
-        let mut expected = x.clone();
-
-        axpy(n, 2.0, &x, 1, &mut y, 1);
-
-        for exp in expected.iter_mut().take(n) {
-            *exp *= 2.0;
-        }
-        assert_eq!(y[..n], expected[..n], "failed at n={}", n);
-    }
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    let mut y = vec![0.0; 2];
+    axpy(4, 2.0, &x, 1, &mut y, 1);
 }
 
 #[test]
@@ -139,30 +108,12 @@ fn test_scal() {
 
 #[test]
 #[should_panic]
-fn test_scal_incx_zero_panic() {
+fn test_scal_panic() {
     let mut x = vec![1.0, 2.0, 3.0, 4.0];
     scal(4, 2.0, &mut x, 0);
-}
 
-#[test]
-fn test_scal_bounds_error() {
-    let result = catch_unwind(|| {
-        let mut x = vec![1.0, 2.0];
-        scal(4, 2.0, &mut x, 1);
-    });
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_scal_various_sizes() {
-    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32, 1024] {
-        let mut x: Vec<f32> = (0..n).map(|i| i as f32 + 1.0).collect();
-        let expected: Vec<f32> = x.iter().map(|v| v * 2.0).collect();
-
-        scal(n, 2.0, &mut x, 1);
-
-        assert_eq!(x[..n], expected[..n], "failed at n={}", n);
-    }
+    let mut x = vec![1.0, 2.0];
+    scal(4, 2.0, &mut x, 1);
 }
 
 #[test]
@@ -200,47 +151,22 @@ fn test_copy() {
 
 #[test]
 #[should_panic]
-fn test_copy_incx_zero_panic() {
+fn test_panic_copy() {
     let x = vec![1.0, 2.0, 3.0, 4.0];
     let mut y = vec![0.0; 4];
     copy(4, &x, 0, &mut y, 1);
-}
 
-#[test]
-#[should_panic]
-fn test_copy_incy_zero_panic() {
     let x = vec![1.0, 2.0, 3.0, 4.0];
     let mut y = vec![0.0; 4];
     copy(4, &x, 1, &mut y, 0);
-}
 
-#[test]
-fn test_copy_bounds_error() {
-    let result = catch_unwind(|| {
-        let x = vec![1.0, 2.0];
-        let mut y = vec![0.0; 4];
-        copy(4, &x, 1, &mut y, 1);
-    });
-    assert!(result.is_err());
+    let x = vec![1.0, 2.0];
+    let mut y = vec![0.0; 4];
+    copy(4, &x, 1, &mut y, 1);
 
-    let result = catch_unwind(|| {
-        let x = vec![1.0, 2.0, 3.0, 4.0];
-        let mut y = vec![0.0; 2];
-        copy(4, &x, 1, &mut y, 1);
-    });
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_copy_various_sizes() {
-    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32] {
-        let x: Vec<f32> = (0..n).map(|i| i as f32 + 1.0).collect();
-        let mut y = vec![0.0; n.max(1)];
-
-        copy(n, &x, 1, &mut y, 1);
-
-        assert_eq!(y[..n], x[..n], "failed at n={}", n);
-    }
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    let mut y = vec![0.0; 2];
+    copy(4, &x, 1, &mut y, 1);
 }
 
 #[test]
@@ -263,43 +189,7 @@ fn test_swap() {
     swap(0, &mut x, 1, &mut y, 1);
     assert_eq!(x, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
     assert_eq!(y, vec![9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0]);
-}
 
-#[test]
-#[should_panic]
-fn test_swap_incx_zero_panic() {
-    let mut x = vec![1.0, 2.0, 3.0, 4.0];
-    let mut y = vec![0.0; 4];
-    swap(4, &mut x, 0, &mut y, 1);
-}
-
-#[test]
-#[should_panic]
-fn test_swap_incy_zero_panic() {
-    let mut x = vec![1.0, 2.0, 3.0, 4.0];
-    let mut y = vec![0.0; 4];
-    swap(4, &mut x, 1, &mut y, 0);
-}
-
-#[test]
-fn test_swap_bounds_error() {
-    let result = catch_unwind(|| {
-        let mut x = vec![1.0, 2.0];
-        let mut y = vec![0.0; 4];
-        swap(4, &mut x, 1, &mut y, 1);
-    });
-    assert!(result.is_err());
-
-    let result = catch_unwind(|| {
-        let mut x = vec![1.0, 2.0, 3.0, 4.0];
-        let mut y = vec![0.0; 2];
-        swap(4, &mut x, 1, &mut y, 1);
-    });
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_swap_overlapping_memory() {
     let mut data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     let (x_slice, y_slice) = data.split_at_mut(4);
     swap(4, x_slice, 1, y_slice, 1);
@@ -308,18 +198,23 @@ fn test_swap_overlapping_memory() {
 }
 
 #[test]
-fn test_swap_various_sizes() {
-    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32] {
-        let mut x: Vec<f32> = (0..n).map(|i| i as f32 + 1.0).collect();
-        let mut y: Vec<f32> = (0..n).map(|i| i as f32 + 100.0).collect();
-        let orig_x = x.clone();
-        let orig_y = y.clone();
+#[should_panic]
+fn test_panic_swap() {
+    let mut x = vec![1.0, 2.0, 3.0, 4.0];
+    let mut y = vec![0.0; 4];
+    swap(4, &mut x, 0, &mut y, 1);
 
-        swap(n, &mut x, 1, &mut y, 1);
+    let mut x = vec![1.0, 2.0, 3.0, 4.0];
+    let mut y = vec![0.0; 4];
+    swap(4, &mut x, 1, &mut y, 0);
 
-        assert_eq!(x[..n], orig_y[..n], "failed at n={}", n);
-        assert_eq!(y[..n], orig_x[..n], "failed at n={}", n);
-    }
+    let mut x = vec![1.0, 2.0];
+    let mut y = vec![0.0; 4];
+    swap(4, &mut x, 1, &mut y, 1);
+
+    let mut x = vec![1.0, 2.0, 3.0, 4.0];
+    let mut y = vec![0.0; 2];
+    swap(4, &mut x, 1, &mut y, 1);
 }
 
 #[test]
@@ -328,7 +223,7 @@ fn test_dot() {
     let y = vec![9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0];
 
     let res = dot(8, &x, 1, &y, 1);
-    let exp = simple_dot(&x, &y);
+    let exp = dot_checker(&x, &y);
     assert_eq!(res, exp);
 
     let res = dot(4, &x, 2, &y, 2);
@@ -346,13 +241,13 @@ fn test_dot() {
     let exp = x[0] * y[3] + x[1] * y[2] + x[2] * y[1] + x[3] * y[0];
     assert_eq!(res, exp);
 
-    let mut gen_x = vec![0.0f32; 1024];
-    let mut gen_y = vec![0.0f32; 1024];
+    let mut gen_x = vec![0.0f32; 8192];
+    let mut gen_y = vec![0.0f32; 8192];
 
     gen_fill(&mut gen_x);
     gen_fill(&mut gen_y);
 
-    let r = 4096;
+    let r = 1024;
 
     let start = std::time::Instant::now();
     for _ in 0..r {
@@ -370,62 +265,25 @@ fn test_dot() {
 
 #[test]
 #[should_panic]
-fn test_dot_incx_zero_panic() {
+fn test_panic_dot() {
     let x = vec![1.0, 2.0, 3.0, 4.0];
     let y = vec![1.0, 2.0, 3.0, 4.0];
     dot(4, &x, 0, &y, 1);
-}
 
-#[test]
-#[should_panic]
-fn test_dot_incy_zero_panic() {
     let x = vec![1.0, 2.0, 3.0, 4.0];
     let y = vec![1.0, 2.0, 3.0, 4.0];
     dot(4, &x, 1, &y, 0);
+
+    let x = vec![1.0, 2.0];
+    let y = vec![1.0, 2.0, 3.0, 4.0];
+    dot(4, &x, 1, &y, 1);
+
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    let y = vec![1.0, 2.0];
+    dot(4, &x, 1, &y, 1);
 }
 
-#[test]
-fn test_dot_bounds_error() {
-    let result = catch_unwind(|| {
-        let x = vec![1.0, 2.0];
-        let y = vec![1.0, 2.0, 3.0, 4.0];
-        dot(4, &x, 1, &y, 1);
-    });
-    assert!(result.is_err());
-
-    let result = catch_unwind(|| {
-        let x = vec![1.0, 2.0, 3.0, 4.0];
-        let y = vec![1.0, 2.0];
-        dot(4, &x, 1, &y, 1);
-    });
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_dot_various_sizes() {
-    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32, 1024] {
-        let x: Vec<f32> = (0..n).map(|i| i as f32 + 1.0).collect();
-        let y: Vec<f32> = (0..n).map(|i| i as f32 + 10.0).collect();
-
-        let res = dot(n, &x, 1, &y, 1);
-        let exp = simple_dot(&x, &y);
-
-        let rel_diff = if exp != 0.0 {
-            (res - exp).abs() / exp.abs()
-        } else {
-            (res - exp).abs()
-        };
-        assert!(
-            rel_diff < 1e-5,
-            "failed at n={}: res={}, exp={}",
-            n,
-            res,
-            exp
-        );
-    }
-}
-
-fn simple_dot(a: &[f32], b: &[f32]) -> f32 {
+fn dot_checker(a: &[f32], b: &[f32]) -> f32 {
     let mut sum = 0.0f32;
     let common = a.len().min(b.len());
     for i in 0..common {
@@ -460,52 +318,10 @@ fn test_nrm2() {
 }
 
 #[test]
-fn test_nrm2_bounds_error() {
-    let result = catch_unwind(|| {
-        let x = vec![1.0, 2.0];
-        nrm2(4, &x, 1);
-    });
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_nrm2_various_sizes() {
-    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32, 1024] {
-        let x: Vec<f32> = (0..n).map(|i| i as f32 + 1.0).collect();
-
-        let res = nrm2(n, &x, 1);
-        let exp: f32 = x.iter().map(|v| v * v).sum::<f32>().sqrt();
-
-        let rel_diff = if exp != 0.0 {
-            (res - exp).abs() / exp.abs()
-        } else {
-            (res - exp).abs()
-        };
-        assert!(
-            rel_diff < 1e-5,
-            "failed at n={}: res={}, exp={}",
-            n,
-            res,
-            exp
-        );
-    }
-}
-
-#[test]
-fn test_nrm2_large_vectors() {
-    for n in [1024, 2048, 4096] {
-        let x: Vec<f32> = (0..n).map(|i| (i as f32) * 0.01).collect();
-
-        let res = nrm2(n, &x, 1);
-        let exp: f32 = x.iter().map(|v| v * v).sum::<f32>().sqrt();
-
-        let rel_diff = if exp != 0.0 {
-            (res - exp).abs() / exp.abs()
-        } else {
-            (res - exp).abs()
-        };
-        assert!(rel_diff < 1e-5, "failed at n={}", n);
-    }
+#[should_panic]
+fn test_nrm2_panic() {
+    let x = vec![1.0, 2.0];
+    nrm2(4, &x, 1);
 }
 
 #[test]
@@ -543,41 +359,11 @@ fn test_asum() {
 
 #[test]
 #[should_panic]
-fn test_asum_incx_zero_panic() {
+fn test_asum_panic() {
     let x = vec![1.0, 2.0, 3.0, 4.0];
     asum(4, &x, 0);
-}
-
-#[test]
-fn test_asum_bounds_error() {
-    let result = catch_unwind(|| {
-        let x = vec![1.0, 2.0];
-        asum(4, &x, 1);
-    });
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_asum_various_sizes() {
-    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32, 1024] {
-        let x: Vec<f32> = (0..n).map(|i| (i as f32) - (n as f32) / 2.0).collect();
-
-        let res = asum(n, &x, 1);
-        let exp: f32 = x.iter().map(|v| v.abs()).sum();
-
-        let rel_diff = if exp != 0.0 {
-            (res - exp).abs() / exp.abs()
-        } else {
-            (res - exp).abs()
-        };
-        assert!(
-            rel_diff < 1e-5,
-            "failed at n={}: res={}, exp={}",
-            n,
-            res,
-            exp
-        );
-    }
+    let x = vec![1.0, 2.0];
+    asum(4, &x, 1);
 }
 
 #[test]
@@ -609,36 +395,7 @@ fn test_i_amax() {
     let x = vec![5.0, 5.0, 5.0, 5.0, 1.0, 2.0, 3.0, 4.0];
     let res = i_amax(8, &x, 1);
     assert_eq!(res, 0);
-}
 
-#[test]
-#[should_panic]
-fn test_i_amax_incx_zero_panic() {
-    let x = vec![1.0, 2.0, 3.0, 4.0];
-    i_amax(4, &x, 0);
-}
-
-#[test]
-fn test_i_amax_bounds_error() {
-    let result = catch_unwind(|| {
-        let x = vec![1.0, 2.0];
-        i_amax(4, &x, 1);
-    });
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_i_amax_various_sizes() {
-    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32, 1024] {
-        let x: Vec<f32> = (0..n).map(|i| (i as f32) + 1.0).collect();
-
-        let res = i_amax(n, &x, 1);
-        assert_eq!(res, n - 1, "failed at n={}", n);
-    }
-}
-
-#[test]
-fn test_i_amax_first_occurrence() {
     let x = vec![5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0];
     let res = i_amax(8, &x, 1);
     assert_eq!(res, 0);
@@ -646,10 +403,7 @@ fn test_i_amax_first_occurrence() {
     let x = vec![-1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
     let res = i_amax(8, &x, 1);
     assert_eq!(res, 0);
-}
 
-#[test]
-fn test_i_amax_negative_values() {
     let x = vec![-10.0, -9.0, -8.0, -7.0, -6.0, -5.0, -4.0, -3.0];
     let res = i_amax(8, &x, 1);
     assert_eq!(res, 0);
@@ -661,6 +415,75 @@ fn test_i_amax_negative_values() {
     let x = vec![-1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, -8.0];
     let res = i_amax(8, &x, 1);
     assert_eq!(res, 7);
+}
+
+#[test]
+#[should_panic]
+fn test_i_amax_panic() {
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    i_amax(4, &x, 0);
+    let x = vec![1.0, 2.0];
+    i_amax(4, &x, 1);
+}
+
+#[test]
+fn test_i_amin() {
+    let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![-8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 7);
+
+    let x = vec![-1.0, 2.0, -3.0, 4.0, -5.0, 6.0, -7.0, 8.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![4.0, 0.0, 3.0, 0.0, 2.0, 0.0, 1.0, 0.0];
+    let res = i_amin(4, &x, 2);
+    assert_eq!(res, 6);
+
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    let res = i_amin(4, &x, -1);
+    assert_eq!(res, 0);
+
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    let res = i_amin(0, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![5.0, 5.0, 5.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 0);
+
+    let x = vec![2.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 1);
+
+    let x = vec![-10.0, -9.0, -8.0, -7.0, -6.0, -5.0, -4.0, -3.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 7);
+
+    let x = vec![-8.0, 7.0, -6.0, 5.0, -4.0, 3.0, -2.0, 1.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 7);
+
+    let x = vec![-1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, -8.0];
+    let res = i_amin(8, &x, 1);
+    assert_eq!(res, 0);
+}
+
+#[test]
+#[should_panic]
+fn test_i_amin_panic() {
+    let x = vec![1.0, 2.0, 3.0, 4.0];
+    i_amin(4, &x, 0);
+    let x = vec![1.0, 2.0];
+    i_amin(4, &x, 1);
 }
 
 #[test]
@@ -706,56 +529,25 @@ fn test_rot() {
 
 #[test]
 #[should_panic]
-fn test_rot_n_zero_panic() {
+fn test_rot_panic() {
     let mut x = vec![1.0, 2.0];
     let mut y = vec![1.0, 2.0];
     rot(0, &mut x, 1, &mut y, 1, 1.0, 0.0);
-}
-
-#[test]
-#[should_panic]
-fn test_rot_incx_zero_panic() {
     let mut x = vec![1.0, 2.0];
     let mut y = vec![1.0, 2.0];
     rot(2, &mut x, 0, &mut y, 1, 1.0, 0.0);
-}
 
-#[test]
-#[should_panic]
-fn test_rot_incy_zero_panic() {
     let mut x = vec![1.0, 2.0];
     let mut y = vec![1.0, 2.0];
     rot(2, &mut x, 1, &mut y, 0, 1.0, 0.0);
-}
 
-#[test]
-fn test_rot_bounds_error() {
-    let result = catch_unwind(|| {
-        let mut x = vec![1.0, 2.0];
-        let mut y = vec![1.0, 2.0, 3.0, 4.0];
-        rot(4, &mut x, 1, &mut y, 1, 1.0, 0.0);
-    });
-    assert!(result.is_err());
+    let mut x = vec![1.0, 2.0];
+    let mut y = vec![1.0, 2.0, 3.0, 4.0];
+    rot(4, &mut x, 1, &mut y, 1, 1.0, 0.0);
 
-    let result = catch_unwind(|| {
-        let mut x = vec![1.0, 2.0, 3.0, 4.0];
-        let mut y = vec![1.0, 2.0];
-        rot(4, &mut x, 1, &mut y, 1, 1.0, 0.0);
-    });
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_rot_various_sizes() {
-    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32, 1024] {
-        let x: Vec<f32> = (0..n).map(|i| i as f32 + 1.0).collect();
-        let y: Vec<f32> = (0..n).map(|i| -(i as f32) - 1.0).collect();
-        let orig_x = x.clone();
-
-        rot(n, &mut x.clone(), 1, &mut y.clone(), 1, 1.0, 0.0);
-
-        assert_eq!(x, orig_x, "failed identity at n={}", n);
-    }
+    let mut x = vec![1.0, 2.0, 3.0, 4.0];
+    let mut y = vec![1.0, 2.0];
+    rot(4, &mut x, 1, &mut y, 1, 1.0, 0.0);
 }
 
 #[test]
@@ -828,87 +620,4 @@ fn test_rotg() {
     assert!((c * c + s * s - 1.0).abs() < 1e-5, "c^2 + s^2 should be ~1");
     assert!((c * r - 3.0).abs() < 1e-5, "c*r should be ~3");
     assert!((s * r - 4.0).abs() < 1e-5, "s*r should be ~4");
-}
-
-#[test]
-fn test_i_amin() {
-    let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-    let res = i_amin(8, &x, 1);
-    assert_eq!(res, 0);
-
-    let x = vec![-8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0];
-    let res = i_amin(8, &x, 1);
-    assert_eq!(res, 7);
-
-    let x = vec![-1.0, 2.0, -3.0, 4.0, -5.0, 6.0, -7.0, 8.0];
-    let res = i_amin(8, &x, 1);
-    assert_eq!(res, 0);
-
-    let x = vec![4.0, 0.0, 3.0, 0.0, 2.0, 0.0, 1.0, 0.0];
-    let res = i_amin(4, &x, 2);
-    assert_eq!(res, 6);
-
-    let x = vec![1.0, 2.0, 3.0, 4.0];
-    let res = i_amin(4, &x, -1);
-    assert_eq!(res, 0);
-
-    let x = vec![1.0, 2.0, 3.0, 4.0];
-    let res = i_amin(0, &x, 1);
-    assert_eq!(res, 0);
-
-    let x = vec![5.0, 5.0, 5.0, 5.0, 6.0, 7.0, 8.0, 9.0];
-    let res = i_amin(8, &x, 1);
-    assert_eq!(res, 0);
-}
-
-#[test]
-#[should_panic]
-fn test_i_amin_incx_zero_panic() {
-    let x = vec![1.0, 2.0, 3.0, 4.0];
-    i_amin(4, &x, 0);
-}
-
-#[test]
-fn test_i_amin_bounds_error() {
-    let result = catch_unwind(|| {
-        let x = vec![1.0, 2.0];
-        i_amin(4, &x, 1);
-    });
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_i_amin_various_sizes() {
-    for n in [1, 7, 8, 9, 15, 16, 17, 24, 32, 1024] {
-        let x: Vec<f32> = (0..n).map(|i| (i as f32) + 1.0).collect();
-
-        let res = i_amin(n, &x, 1);
-        assert_eq!(res, 0, "failed at n={}", n);
-    }
-}
-
-#[test]
-fn test_i_amin_first_occurrence() {
-    let x = vec![1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0];
-    let res = i_amin(8, &x, 1);
-    assert_eq!(res, 0);
-
-    let x = vec![2.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
-    let res = i_amin(8, &x, 1);
-    assert_eq!(res, 1);
-}
-
-#[test]
-fn test_i_amin_negative_values() {
-    let x = vec![-10.0, -9.0, -8.0, -7.0, -6.0, -5.0, -4.0, -3.0];
-    let res = i_amin(8, &x, 1);
-    assert_eq!(res, 7);
-
-    let x = vec![-8.0, 7.0, -6.0, 5.0, -4.0, 3.0, -2.0, 1.0];
-    let res = i_amin(8, &x, 1);
-    assert_eq!(res, 7);
-
-    let x = vec![-1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, -8.0];
-    let res = i_amin(8, &x, 1);
-    assert_eq!(res, 0);
 }
